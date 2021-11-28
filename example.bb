@@ -32,12 +32,10 @@
   (prn result))
 
 (let [{:keys[host deconz-key mqtt-pass]} (-> ".secrets" slurp edn/read-string)]
-  (radiale/listen {:service :mdns :service-type "_googlecast._tcp.local."} mdns-get-info)
-  (radiale/listen {:service :mdns :service-type "_esphomelib._tcp.local."} mdns-get-info)
-  (radiale/listen {:service :mqtt :host host :username "homeassistant" :password mqtt-pass} log)
-  (radiale/listen {:service :deconz :host host :api-key deconz-key} log))
+  (radiale/listen-mdns {:service-type "_googlecast._tcp.local."} mdns-get-info)
+  (radiale/listen-mdns {:service-type "_esphomelib._tcp.local."} mdns-get-info)
+  (radiale/listen-mqtt {:host host :username "homeassistant" :password mqtt-pass} log)
+  (radiale/listen-deconz {:host host :api-key deconz-key} log))
 
-(prn "loaded")
 (while true
-  (prn "loop")
-  (radiale/sleep-ms 500))
+  (radiale/sleep-ms 1000))

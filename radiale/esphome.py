@@ -1,10 +1,7 @@
-#!/usr/bin/env python3
-
 import aioesphomeapi
-import asyncio
 
 
-async def subscribe_esp(id, opts):
+async def subscribe_esp(out, id, opts):
     host, port = opts['addresses'][0]
     cli = aioesphomeapi.APIClient(host, port, None)
 
@@ -20,7 +17,7 @@ async def subscribe_esp(id, opts):
         service_details[str(s.key)] = \
             {**s.to_dict(), **{"type": "user-defined-service"}}
 
-    write_msg(
+    out.write_msg(
             id=id,
             data={
                 "service-name": opts['service-name'],
@@ -29,7 +26,7 @@ async def subscribe_esp(id, opts):
             )
 
     def esp_change_callback(state):
-        write_msg(
+        out.write_msg(
                 id=id,
                 data={
                     "service-name": opts['service-name'],
@@ -37,4 +34,3 @@ async def subscribe_esp(id, opts):
                     })
 
     await cli.subscribe_states(esp_change_callback)
-

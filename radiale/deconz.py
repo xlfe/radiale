@@ -1,36 +1,33 @@
 import json
 import websockets
 import aiohttp
-import asyncio
 
 
 class Deconz:
     def __init__(self):
-        pass
+        self.uri = self.ws = None
 
-    async def deconz(self, id, opts):
+    async def listen(self, out, id, opts):
         config = "http://{}:{}/api/{}".format(
                 opts['host'], opts['port'] if 'port' in opts else 80,
                 opts['api-key']
                 )
 
-        ws = None
         async with aiohttp.ClientSession() as session:
             async with session.get(config) as response:
+                config_data = await response.json()
+                out.write_msg(id=id, data=config_data)
 
-                d = await response.json()
-                write_msg(id=id, data=d)
+                self.uri = "ws://{}:{}".format(
+                        opts['host'],
+                        config_data['config']['websocketport'])
 
-                ws = "ws://{}:{}".format(opts['host'], d['config']['websocketport'])
-
-        if ws:
-            self.deconzws = await websockets.connect(ws)
+        if self.uri:
+            self.ws = await websockets.connect(self.uri)
 
             try:
-                while self.running:
-                    data = await self.deconzws.recv()
-                    write_msg(id=id, data=json.loads(data))
-                    await asyncio.sleep(0.1)
+                while True:
+                    data = await self.ws.recv()
+                    out.write_msg(id=id, data=json.loads(data))
             except websockets.exceptions.ConnectionClosedOK:
                 pass
-
