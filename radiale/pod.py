@@ -109,20 +109,22 @@ class RadialePod(object):
                     if 'mdns' not in self.services:
                         self.services['mdns'] = \
                                 await mdns.MDNS().start(self.out)
-                    await self.services['mdns'].listen(id, opts)
+                    asyncio.create_task(self.services['mdns'].listen(id, opts))
 
                 elif var.endswith('mdns-info*'):
                     assert 'mdns' in self.services
-                    await self.services['mdns'].info(id, opts)
+                    asyncio.create_task(self.services['mdns'].info(id, opts))
 
                 elif var.endswith('listen-deconz*'):
                     assert 'deconz' not in self.services
                     self.services['deconz'] = deconz.Deconz()
-                    await self.services['deconz'].listen(self.out, id, opts)
+                    asyncio.create_task(
+                        self.services['deconz'].listen(self.out, id, opts))
 
                 elif var.endswith('listen-mqtt*'):
                     asyncio.create_task(
                             mqtt.mqtt_listen(self.out, id, opts))
 
                 elif var.endswith('subscribe-esp*'):
-                    await esphome.subscribe_esp(self.out, id, opts)
+                    asyncio.create_task(
+                        esphome.subscribe_esp(self.out, id, opts))

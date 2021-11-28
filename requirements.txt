@@ -1,7 +1,1 @@
-websockets
-aiohttp
-pychromecast
-aioesphomeapi
-zeroconf
-bcoding
-asyncio-mqtt
+radiale==0.3
