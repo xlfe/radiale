@@ -34,3 +34,11 @@ async def subscribe_esp(out, id, opts):
                     })
 
     await cli.subscribe_states(esp_change_callback)
+    return {opts['service-name'].split('.')[0]: cli}
+
+
+async def switch_command(out, id, client, key, state):
+    await client.switch_command(key, state)
+    out.write_msg(id=id, data={"success": True})
+
+

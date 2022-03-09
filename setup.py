@@ -3,7 +3,7 @@ from distutils.core import setup
 setup(
     name='radiale',
     packages=['radiale'],
-    version='0.3',
+    version='0.4',
     license='EPL',
     description='radiale',
     url='https://github.com/xlfe/radiale',
@@ -15,7 +15,11 @@ setup(
         'aioesphomeapi',
         'zeroconf',
         'bcoding',
-        'asyncio-mqtt'
+        'asyncio-mqtt',
+        'boltons',
+        'celery',
+        'ephem',
+        'pytz'
     ],
     classifiers=[
      'Development Status :: 3 - Alpha',

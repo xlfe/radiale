@@ -14,10 +14,12 @@ Working currently :-
 * MQTT Client
 * MDNS listener + get info
 * ESP32 state subscription
+* ESP32 switch command
 * deconz event listener (websocket)
+* deconz actions
+* simple scheduling
 
 Todo
-* change states
 * chromecast
 * MQTT Broker
 

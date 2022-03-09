@@ -1,7 +1,8 @@
-from . import mdns, esphome, deconz, mqtt
+from . import mdns, esphome, deconz, mqtt, schedule
 import asyncio
 import json
 import sys
+from boltons.iterutils import remap
 from bcoding import bencode, bdecode
 
 
@@ -47,6 +48,12 @@ def _write_(d):
     sys.stdout.buffer.flush()
 
 
+def clean_data(path, key, value):
+    return value is not float("nan") and \
+           value is not float("inf") and \
+           value is not float("-inf")
+
+
 class OutgoingQ():
 
     async def start(self):
@@ -65,7 +72,14 @@ class OutgoingQ():
 
     def write_msg(self, id, data, status="status"):
         self.write_raw(
-                dict(value=json.dumps(data), id=id, status=[status]))
+            dict(
+                    value=json.dumps(
+                        remap(data, visit=clean_data)
+                        if type(data) is dict else data
+                        ),
+                    id=id,
+                    status=[status])
+                )
 
 
 class RadialePod(object):
@@ -73,6 +87,8 @@ class RadialePod(object):
     def __init__(self):
         self.running = True
         self.services = {}
+        self.options = {}
+        self.esp_clients = {}
 
     async def run_pod(self):
         self.out = await OutgoingQ().start()
@@ -89,8 +105,12 @@ class RadialePod(object):
                             'listen-mdns',
                             'listen-mqtt',
                             'listen-deconz',
+                            'millis-solar',
+                            'millis-crontab',
+                            'put-deconz',
                             'mdns-info',
-                            'subscribe-esp'])
+                            'subscribe-esp',
+                            'switch-esp'])
                         )
 
             elif op == 'shutdown':
@@ -118,13 +138,44 @@ class RadialePod(object):
                 elif var.endswith('listen-deconz*'):
                     assert 'deconz' not in self.services
                     self.services['deconz'] = deconz.Deconz()
+                    self.options['deconz'] = opts
                     asyncio.create_task(
                         self.services['deconz'].listen(self.out, id, opts))
+
+                elif var.endswith('put-deconz*'):
+                    assert 'deconz' in self.services
+                    type_name = opts['type']
+                    device_id = opts['id']
+                    state = opts['state']
+                    opts = self.options['deconz']
+
+                    asyncio.create_task(
+                        self.services['deconz'].put(
+                            self.out, id, opts,
+                            type_name, device_id, state
+                            ))
 
                 elif var.endswith('listen-mqtt*'):
                     asyncio.create_task(
                             mqtt.mqtt_listen(self.out, id, opts))
 
                 elif var.endswith('subscribe-esp*'):
-                    asyncio.create_task(
-                        esphome.subscribe_esp(self.out, id, opts))
+                    self.esp_clients.update(
+                        await asyncio.create_task(
+                            esphome.subscribe_esp(self.out, id, opts))
+                    )
+                elif var.endswith('switch-esp*'):
+                    client = self.esp_clients[opts['service-name']]
+                    assert client
+                    await esphome.switch_command(self.out, id, client, opts['key'], opts['state'])
+
+                elif var.endswith('millis-solar*'):
+                    ms = schedule.ms_until_solar(opts)
+                    self.out.write_msg(id=id, status="done", data=dict(ms=ms))
+
+                elif var.endswith('millis-crontab*'):
+                    ms = schedule.ms_until_crontab(opts)
+                    self.out.write_msg(id=id, status="done", data=dict(ms=ms))
+
+
+
