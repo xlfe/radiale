@@ -171,10 +171,18 @@ class RadialePod(object):
 
                 elif var.endswith('millis-solar*'):
                     ms = schedule.ms_until_solar(opts)
+                    while ms < 1000:
+                        await asyncio.sleep(1)
+                        ms = schedule.ms_until_solar(opts)
+
                     self.out.write_msg(id=id, status="done", data=dict(ms=ms))
 
                 elif var.endswith('millis-crontab*'):
                     ms = schedule.ms_until_crontab(opts)
+                    while ms < 1000:
+                        await asyncio.sleep(1)
+                        ms = schedule.ms_until_solar(opts)
+
                     self.out.write_msg(id=id, status="done", data=dict(ms=ms))
 
 
