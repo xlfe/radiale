@@ -110,7 +110,8 @@ class RadialePod(object):
                             'put-deconz',
                             'mdns-info',
                             'subscribe-esp',
-                            'switch-esp'])
+                            'switch-esp',
+                            'light-esp'])
                         )
 
             elif op == 'shutdown':
@@ -168,6 +169,11 @@ class RadialePod(object):
                     client = self.esp_clients[opts['service-name']]
                     assert client
                     await esphome.switch_command(self.out, id, client, opts['key'], opts['state'])
+
+                elif var.endswith('light-esp*'):
+                    client = self.esp_clients[opts['service-name']]
+                    assert client
+                    await esphome.light_command(self.out, id, client, opts['key'], opts['params'])
 
                 elif var.endswith('millis-solar*'):
                     ms = schedule.ms_until_solar(opts)

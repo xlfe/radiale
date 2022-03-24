@@ -1,5 +1,6 @@
 (ns radiale.schedule
   (:require 
+    [clojure.core.async :as async]
     [taoensso.timbre :as timbre]
     [babashka.pods :as pods]
     [clojure.tools.logging :as log]
@@ -13,50 +14,49 @@
 
 
 (defn run-schedule
-  [rmc rms rsms {:keys [after every crontab solar] :as schedule} f]
-  (let [[schedule-again? afn sfn] 
-        (cond 
-          after 
-          [false aa/after (fn [cb] 
-                            (cb (* after 1000)))]
-
-          every 
-          [false aa/every (fn [cb] 
-                            (cb (* every 1000)))]
-
-          crontab 
-          [true aa/after #(rmc crontab %)]
-
-          solar 
-          [true aa/after #(rms solar %)])]
-                  
-
-    (sfn 
-      (fn [{:keys [ms] :as n}]
-        (timbre/debug schedule (or ms n))
-        (afn 
-          (or ms n)
-          (fn []
-            (f)
-            ()
-            (when schedule-again?
-              (rsms 1000)
-              (run-schedule rmc rms rsms schedule f)))
-          s-pool
-          :desc 
-          (prn-str schedule))))))
+ [schedule-again? afn sfn f] 
+ (sfn 
+   (fn [{:keys [ms] :as n}]
+     (afn 
+       (or ms n)
+       (fn []
+         (f)
+         (when schedule-again?
+           (Thread/sleep 100)
+           (run-schedule schedule-again? afn sfn f)))
+       s-pool))))
 
 (defn crontab
-  [k radiale params])
+  [{:keys [millis-crontab]} send-chan {:keys [::params] :as m}]
+  (run-schedule 
+    true 
+    aa/after 
+    #(millis-crontab params %)
+    #(async/>!! send-chan m)))
 
 (defn solar
-  [k radiale params])
+  [{:keys [millis-solar]} send-chan {:keys [::params] :as m}]
+  (run-schedule 
+    true 
+    aa/after 
+    #(millis-solar params %)
+    #(async/>!! send-chan m)))
 
 (defn after
-  [k radiale params])
+  [_ send-chan {:keys [::seconds] :as m}]
+  (run-schedule 
+    false 
+    aa/after 
+    (fn [cb] (cb (* seconds 1000)))
+    #(async/>!! send-chan m)))
 
 (defn every
-  [k radiale params])
+  [_ send-chan {:keys [::seconds] :as m}]
+  (run-schedule 
+    false 
+    aa/every 
+    (fn [cb] (cb (* seconds 1000)))
+    #(async/>!! send-chan m)))
 
 
 

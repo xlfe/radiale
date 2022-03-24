@@ -42,3 +42,8 @@ async def switch_command(out, id, client, key, state):
     out.write_msg(id=id, data={"success": True})
 
 
+async def light_command(out, id, client, key, params):
+    await client.light_command(key, **params)
+    out.write_msg(id=id, data={"success": True})
+
+

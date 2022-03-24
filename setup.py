@@ -18,7 +18,7 @@ setup(
         'asyncio-mqtt',
         'boltons',
         'celery',
-        'ephem',
+        'astral',
         'pytz'
     ],
     classifiers=[
