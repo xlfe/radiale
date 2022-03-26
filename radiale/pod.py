@@ -1,5 +1,6 @@
 from . import mdns, esphome, deconz, mqtt, schedule
 import asyncio
+import traceback
 import json
 import sys
 from boltons.iterutils import remap
@@ -7,7 +8,7 @@ from bcoding import bencode, bdecode
 
 
 def eprint(e):
-    sys.stderr.buffer.write(e.encode('utf-8'))
+    sys.stderr.buffer.write(e.encode('utf-8') + '\n'.encode('utf-8'))
     sys.stderr.buffer.flush()
 
 
@@ -118,78 +119,90 @@ class RadialePod(object):
                 self.running = self.out.running = False
 
             elif op == "invoke":
-                var = msg["var"]
-                id = msg["id"]
-                opts = json.loads(msg["args"])[0]
+                try:
+                    await self.invoke(msg)
+                except Exception:
+                    eprint(traceback.format_exc())
+                    ex_type, ex_value, ex_traceback = sys.exc_info()
+                    self.out.write_msg(
+                            id=msg["id"],
+                            status="error",
+                            data=repr(ex_value))
 
-                if var.endswith('sleep-ms'):
-                    await asyncio.sleep(int(opts)/1000.0)
-                    self.out.write_msg(id=id, status="done", data=opts)
 
-                elif var.endswith('listen-mdns*'):
-                    if 'mdns' not in self.services:
-                        self.services['mdns'] = \
-                                await mdns.MDNS().start(self.out)
-                    asyncio.create_task(self.services['mdns'].listen(id, opts))
+    async def invoke(self, msg):
+        var = msg["var"]
+        id = msg["id"]
+        opts = json.loads(msg["args"])[0]
 
-                elif var.endswith('mdns-info*'):
-                    assert 'mdns' in self.services
-                    asyncio.create_task(self.services['mdns'].info(id, opts))
+        if var.endswith('sleep-ms'):
+            await asyncio.sleep(int(opts)/1000.0)
+            self.out.write_msg(id=id, status="done", data=opts)
 
-                elif var.endswith('listen-deconz*'):
-                    assert 'deconz' not in self.services
-                    self.services['deconz'] = deconz.Deconz()
-                    self.options['deconz'] = opts
-                    asyncio.create_task(
-                        self.services['deconz'].listen(self.out, id, opts))
+        elif var.endswith('listen-mdns*'):
+            if 'mdns' not in self.services:
+                self.services['mdns'] = \
+                        await mdns.MDNS().start(self.out)
+            asyncio.create_task(self.services['mdns'].listen(id, opts))
 
-                elif var.endswith('put-deconz*'):
-                    assert 'deconz' in self.services
-                    type_name = opts['type']
-                    device_id = opts['id']
-                    state = opts['state']
-                    opts = self.options['deconz']
+        elif var.endswith('mdns-info*'):
+            assert 'mdns' in self.services
+            asyncio.create_task(self.services['mdns'].info(id, opts))
 
-                    asyncio.create_task(
-                        self.services['deconz'].put(
-                            self.out, id, opts,
-                            type_name, device_id, state
-                            ))
+        elif var.endswith('listen-deconz*'):
+            assert 'deconz' not in self.services
+            self.services['deconz'] = deconz.Deconz()
+            self.options['deconz'] = opts
+            asyncio.create_task(
+                self.services['deconz'].listen(self.out, id, opts))
 
-                elif var.endswith('listen-mqtt*'):
-                    asyncio.create_task(
-                            mqtt.mqtt_listen(self.out, id, opts))
+        elif var.endswith('put-deconz*'):
+            assert 'deconz' in self.services
+            type_name = opts['type']
+            device_id = opts['id']
+            state = opts['state']
+            opts = self.options['deconz']
 
-                elif var.endswith('subscribe-esp*'):
-                    self.esp_clients.update(
-                        await asyncio.create_task(
-                            esphome.subscribe_esp(self.out, id, opts))
-                    )
-                elif var.endswith('switch-esp*'):
-                    client = self.esp_clients[opts['service-name']]
-                    assert client
-                    await esphome.switch_command(self.out, id, client, opts['key'], opts['state'])
+            asyncio.create_task(
+                self.services['deconz'].put(
+                    self.out, id, opts,
+                    type_name, device_id, state
+                    ))
 
-                elif var.endswith('light-esp*'):
-                    client = self.esp_clients[opts['service-name']]
-                    assert client
-                    await esphome.light_command(self.out, id, client, opts['key'], opts['params'])
+        elif var.endswith('listen-mqtt*'):
+            asyncio.create_task(
+                    mqtt.mqtt_listen(self.out, id, opts))
 
-                elif var.endswith('millis-solar*'):
-                    ms = schedule.ms_until_solar(opts)
-                    while ms < 1000:
-                        await asyncio.sleep(1)
-                        ms = schedule.ms_until_solar(opts)
+        elif var.endswith('subscribe-esp*'):
+            self.esp_clients.update(
+                await asyncio.create_task(
+                    esphome.subscribe_esp(self.out, id, opts))
+            )
+        elif var.endswith('switch-esp*'):
+            client = self.esp_clients[opts['service-name']]
+            assert client
+            await esphome.switch_command(self.out, id, client, opts['key'], opts['state'])
 
-                    self.out.write_msg(id=id, status="done", data=dict(ms=ms))
+        elif var.endswith('light-esp*'):
+            client = self.esp_clients[opts['service-name']]
+            assert client
+            await esphome.light_command(self.out, id, client, opts['key'], opts['params'])
 
-                elif var.endswith('millis-crontab*'):
-                    ms = schedule.ms_until_crontab(opts)
-                    while ms < 1000:
-                        await asyncio.sleep(1)
-                        ms = schedule.ms_until_solar(opts)
+        elif var.endswith('millis-solar*'):
+            ms = schedule.ms_until_solar(opts)
+            while ms < 1000:
+                await asyncio.sleep(1)
+                ms = schedule.ms_until_solar(opts)
 
-                    self.out.write_msg(id=id, status="done", data=dict(ms=ms))
+            self.out.write_msg(id=id, status="done", data=dict(ms=ms))
+
+        elif var.endswith('millis-crontab*'):
+            ms = schedule.ms_until_crontab(opts)
+            while ms < 1000:
+                await asyncio.sleep(1)
+                ms = schedule.ms_until_solar(opts)
+
+            self.out.write_msg(id=id, status="done", data=dict(ms=ms))
 
 
 
