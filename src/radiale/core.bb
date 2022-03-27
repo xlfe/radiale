@@ -5,7 +5,6 @@
     [clojure.core.async :as async]
     [taoensso.timbre :as timbre]
     [clojure.test :refer [function?]]
-    [clojure.edn :as edn]
     [clojure.core.async :as a]
     [babashka.pods :as pods]))
     ; [radiale.schedule :as schedule]
@@ -77,14 +76,7 @@
 
           :else (timbre/error msg))))))
                               
-(defn slurp-edn
-  [])
 
-
-; (let [{:keys[host deconz-key mqtt-pass]} (-> ".secrets" slurp edn/read-string)])
-  ; (radiale/listen-mdns {:service-type "_googlecast._tcp.local."} mdns-get-info))
-  ; (radiale/listen-mqtt {:host host :username "homeassistant" :password mqtt-pass} log))
-  ; (radiale/listen-deconz {:host host :api-key deconz-key} log))
 
 
 

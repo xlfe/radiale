@@ -37,7 +37,11 @@ class Deconz:
 
             try:
                 while True:
-                    data = await self.ws.recv()
-                    out.write_msg(id=id, data=json.loads(data))
+                    if not self.ws.open:
+                        self.ws = await websockets.connect(self.uri)
+                    else:
+                        data = await self.ws.recv()
+                        out.write_msg(id=id, data=json.loads(data))
+
             except websockets.exceptions.ConnectionClosedOK:
                 pass
