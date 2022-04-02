@@ -176,7 +176,8 @@ class RadialePod(object):
         elif var.endswith('subscribe-esp*'):
             self.esp_clients.update(
                 await asyncio.create_task(
-                    esphome.subscribe_esp(self.out, id, opts))
+                    esphome.subscribe_esp(self.out,
+                        self.services['mdns'].aiozc.zeroconf, id, opts))
             )
         elif var.endswith('switch-esp*'):
             client = self.esp_clients[opts['service-name']]

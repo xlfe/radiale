@@ -3,7 +3,7 @@ from distutils.core import setup
 setup(
     name='radiale',
     packages=['radiale'],
-    version='0.5',
+    version='0.5.1',
     license='EPL',
     description='radiale',
     url='https://github.com/xlfe/radiale',

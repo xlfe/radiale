@@ -3,6 +3,7 @@
     [clojure.core.async :as async]
     [taoensso.timbre :as timbre]
     [babashka.pods :as pods]
+    [radiale.core :as rc]
     [clojure.tools.logging :as log]
     [babashka.deps :as deps]))
 
@@ -14,49 +15,55 @@
 
 
 (defn run-schedule
- [schedule-again? afn sfn f] 
+ [schedule-again? afn sfn f desc] 
  (sfn 
    (fn [{:keys [ms] :as n}]
+     (when desc
+       (timbre/info "SCHEDULING" desc "in" (long (/ (or ms n) 1000)) "s"))
      (afn 
        (or ms n)
        (fn []
          (f)
          (when schedule-again?
            (Thread/sleep 100)
-           (run-schedule schedule-again? afn sfn f)))
+           (run-schedule schedule-again? afn sfn f desc)))
        s-pool))))
 
 (defn crontab
-  [{:keys [millis-crontab]} send-chan {:keys [::params] :as m}]
+  [{:keys [millis-crontab]} send-chan {:keys [::params ::rc/desc] :as m}]
   (run-schedule 
     true 
     aa/after 
     #(millis-crontab params %)
-    #(async/>!! send-chan m)))
+    #(async/>!! send-chan m)
+    desc))
 
 (defn solar
-  [{:keys [millis-solar]} send-chan {:keys [::params] :as m}]
+  [{:keys [millis-solar]} send-chan {:keys [::params ::rc/desc] :as m}]
   (run-schedule 
     true 
     aa/after 
     #(millis-solar params %)
-    #(async/>!! send-chan m)))
+    #(async/>!! send-chan m)
+    desc))
 
 (defn after
-  [_ send-chan {:keys [::seconds] :as m}]
+  [_ send-chan {:keys [::seconds ::rc/desc] :as m}]
   (run-schedule 
     false 
     aa/after 
     (fn [cb] (cb (* seconds 1000)))
-    #(async/>!! send-chan m)))
+    #(async/>!! send-chan m)
+    desc))
 
 (defn every
-  [_ send-chan {:keys [::seconds] :as m}]
+  [_ send-chan {:keys [::seconds ::rc/desc] :as m}]
   (run-schedule 
     false 
     aa/every 
     (fn [cb] (cb (* seconds 1000)))
-    #(async/>!! send-chan m)))
+    #(async/>!! send-chan m)
+    desc))
 
 
 

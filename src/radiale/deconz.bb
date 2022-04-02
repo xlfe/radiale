@@ -47,14 +47,23 @@
         (store-deconz-config result)
         (state-change result bus (dissoc m ::api-key ::host))))))
 
+
+(defn get-config
+  [ident]
+  (let [{:keys [::id ::service]}  (get @deconz-config* ident)]
+    {:id id :type service}))
+
 (defn put
   [{:keys [put-deconz]} bus {:keys [::state ::ident] :as m}]
-  (let [{:keys [::id ::service] :as config}  (get @deconz-config* ident)]
-    (put-deconz 
-      {:type service :id id :state state}
-      (fn [r]
-        (timbre/debug ident state r)))))
+  (doseq [i (if (sequential? ident) ident [ident])]
+    (doseq [s (if (sequential? state) state [state])]
+      (put-deconz 
+        (merge (get-config i) 
+               {:state s})
+        (fn [r]
+          (timbre/debug i s r)))))
               
+  (async/>!! bus m)) 
 
 ; (put-deconz {:type "lights" :id "8" :state {:on false}} log)
 ; (put-deconz {:type "lights" :id "8" :state {:on true :bri 0 :transitiontime 0}} log)

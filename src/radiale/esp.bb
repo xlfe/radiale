@@ -14,7 +14,7 @@
       (let [service-ident (keyword service-name (:object_id v))]
         (assert (nil? (get m k)))
         (assert (nil? (get m service-ident)))
-        (timbre/debug "Discovered ESP-Home service:" service-ident)
+        (timbre/info "Discovered ESP-Home service:" service-ident)
         (merge m {k service-ident
                   service-ident v})))
     {}
@@ -22,19 +22,28 @@
 
 
 (defn esp-logger
-  [bus m {:keys [service-name services state]}]
+  [bus m {:keys [service-name services state connected]}]
   (let [service-name (first (clojure.string/split service-name #"\."))]
     (if services
       (swap! esp-registry* merge (keywordize-esp-services service-name services))
-      (let [
-            [k state]     state
-            er            @esp-registry*
-            service-ident (get er (keyword k))
-            service       (get er service-ident)]
+      (if (some? connected)
+        (let [er      @esp-registry*]
 
-        (async/>!! bus (merge m {::state state 
-                                 ::service service
-                                 ::ident service-ident})))))) 
+          (doseq [service-ident (filter #(= service-name (namespace %)) (keys er))]
+
+            (async/>!! bus (merge m {::connected connected 
+                                     ::service (get er service-ident)
+                                     ::ident service-ident}))))
+             
+        (let [
+              [k state]     state
+              er            @esp-registry*
+              service-ident (get er (keyword k))
+              service       (get er service-ident)]
+
+          (async/>!! bus (merge m {::state state 
+                                   ::service service
+                                   ::ident service-ident}))))))) 
 
 
 

@@ -33,26 +33,27 @@
 (defn try-fn
   [send-chan m]
   (watch/match-message send-chan m)
-  (if-let [fn- (::fn m)]
+  (let [clean-m (dissoc m ::fn ::then)]
+    (if-let [fn- (::fn m)]
 
-    ; if there is a ::fn specified, call it now after removing it from the map
-    (fn- radiale-map send-chan (dissoc m ::fn))
+      ; if there is a ::fn specified, call it now after removing it from the map
+      (fn- radiale-map send-chan (dissoc m ::fn))
 
-    ; if not, check for a ::then
-    ; If so, merge the map and try again for a fn
-    (when-let [then (::then m)]
-      (cond
-        (fn? then)
-        (try-fn send-chan (then m))
+      ; if not, check for a ::then
+      ; If so, merge the map and try again for a fn
+      (when-let [then (::then m)]
+        (cond
+          (fn? then)
+          (try-fn send-chan (then clean-m))
 
-        (map? then)
-        (try-fn send-chan (merge m then))
+          (map? then)
+          (try-fn send-chan (merge clean-m then))
         
-        (sequential? then)
-        (doseq [t then]
-          (try-fn send-chan (merge m t)))
+          (sequential? then)
+          (doseq [t then]
+            (try-fn send-chan (merge clean-m t)))
     
-        :else (timbre/error m)))))
+          :else (timbre/error m))))))
 
 (defn run
   [config]
@@ -65,14 +66,18 @@
     (while true
       (let [msg (async/<!! send-chan)]
 
-        ; (timbre/debug msg)
+        (doseq [[k v] msg]
+          (timbre/debug k v))
+
+        (timbre/debug "\n\n")
+
         (cond
           (map? msg)
           (try-fn send-chan msg)
           
-          (sequential? msg)
-          (doseq [m msg]
-            (try-fn send-chan m))
+          ; (sequential? msg)
+          ; (doseq [m msg]
+            ; (try-fn send-chan m))
 
           :else (timbre/error msg))))))
                               
