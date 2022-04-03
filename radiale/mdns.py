@@ -28,9 +28,14 @@ class MDNS():
         self.browsers = {}
         return self
 
-    async def info(self, id, opts):
-        info = AsyncServiceInfo(opts['service-type'], opts['service-name'])
+    async def get_info(self, st, sn):
+        info = AsyncServiceInfo(st, sn)
         await info.async_request(self.aiozc.zeroconf, 3000)
+        return info
+
+    async def info(self, id, opts):
+
+        info = await self.get_info(opts['service-type'], opts['service-name'])
 
         data = None
         if info:

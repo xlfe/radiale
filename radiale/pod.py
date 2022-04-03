@@ -89,7 +89,7 @@ class RadialePod(object):
         self.running = True
         self.services = {}
         self.options = {}
-        self.esp_clients = {}
+        self.esp = {}
 
     async def run_pod(self):
         self.out = await OutgoingQ().start()
@@ -174,20 +174,43 @@ class RadialePod(object):
                     mqtt.mqtt_listen(self.out, id, opts))
 
         elif var.endswith('subscribe-esp*'):
-            self.esp_clients.update(
-                await asyncio.create_task(
-                    esphome.subscribe_esp(self.out,
-                        self.services['mdns'].aiozc.zeroconf, id, opts))
-            )
+            sn = opts['service-name']
+            assert sn is not None
+            assert len(sn) > 0
+            svc = self.esp.get(sn)
+
+            _mdns = self.services.get('mdns')
+
+            # new service, create client
+            if svc is None:
+
+                assert mdns is not None
+                self.esp[sn] = \
+                    svc = esphome.ESPHome(self.out, id, _mdns, sn)
+
+            # check if its in a connecting loop already
+            async with svc.connecting_lock:
+                if svc.connecting:
+                    return
+
+            # if not connected, connect otherwise
+            if svc.cli is None or svc.cli._connection is None:
+                await asyncio.create_task(svc.connect())
+                await asyncio.create_task(svc.update_services())
+                await svc.connected_state(True)
+                await asyncio.create_task(svc.subscribe())
+
         elif var.endswith('switch-esp*'):
-            client = self.esp_clients[opts['service-name']]
-            assert client
-            await esphome.switch_command(self.out, id, client, opts['key'], opts['state'])
+            sn = opts['service-name']
+            service = self.esp.get(sn)
+            assert service
+            await service.switch_command(id, opts['key'], opts['state'])
 
         elif var.endswith('light-esp*'):
-            client = self.esp_clients[opts['service-name']]
-            assert client
-            await esphome.light_command(self.out, id, client, opts['key'], opts['params'])
+            sn = opts['service-name']
+            service = self.esp.get(sn)
+            assert service
+            await service.light_command(id, opts['key'], opts['params'])
 
         elif var.endswith('millis-solar*'):
             ms = schedule.ms_until_solar(opts)

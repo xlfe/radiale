@@ -23,21 +23,18 @@
 
 (defn esp-logger
   [bus m {:keys [service-name services state connected]}]
-  (let [service-name (first (clojure.string/split service-name #"\."))]
-    (if services
-      (swap! esp-registry* merge (keywordize-esp-services service-name services))
+  (if services
+    (swap! esp-registry* merge (keywordize-esp-services service-name services))
+    (let [er      @esp-registry*]
       (if (some? connected)
-        (let [er      @esp-registry*]
 
-          (doseq [service-ident (filter #(= service-name (namespace %)) (keys er))]
-
-            (async/>!! bus (merge m {::connected connected 
-                                     ::service (get er service-ident)
-                                     ::ident service-ident}))))
+        (doseq [service-ident (filter #(= service-name (namespace %)) (keys er))]
+          (async/>!! bus (merge m {::connected connected 
+                                   ::service (get er service-ident)
+                                   ::ident service-ident})))
              
         (let [
               [k state]     state
-              er            @esp-registry*
               service-ident (get er (keyword k))
               service       (get er service-ident)]
 
@@ -46,22 +43,18 @@
                                    ::ident service-ident}))))))) 
 
 
-
-
-
 (defn discover
   [{:keys [listen-mdns mdns-info subscribe-esp]} bus m]
   (listen-mdns 
    {:service-type "_esphomelib._tcp.local."} 
-   (fn [{:keys [state-change] :as mdns-state}]
-     (when (= state-change "added")
-       (mdns-info 
-        mdns-state 
-        (fn [{:keys [service-type] :as mdns-info}]
-          (when (= service-type "_esphomelib._tcp.local.")
-            (subscribe-esp 
-             mdns-info 
-             (partial esp-logger bus m)))))))))
+   (fn [{:keys [state-change service-name] :as mdns-state}]
+     (let [service-name (first (clojure.string/split service-name #"\."))]
+        (when (or 
+                (= state-change "updated")
+                (= state-change "added"))
+          (subscribe-esp {:service-name service-name}
+            (partial esp-logger bus m)))))))
+
 
 
 (defn esp-base-data
