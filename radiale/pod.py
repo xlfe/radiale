@@ -1,4 +1,4 @@
-from . import mdns, esphome, deconz, mqtt, schedule
+from . import mdns, esphome, deconz, mqtt, schedule, chromecast
 import asyncio
 import traceback
 import json
@@ -90,6 +90,7 @@ class RadialePod(object):
         self.services = {}
         self.options = {}
         self.esp = {}
+        self.chromecast = {}
 
     async def run_pod(self):
         self.out = await OutgoingQ().start()
@@ -106,13 +107,16 @@ class RadialePod(object):
                             'listen-mdns',
                             'listen-mqtt',
                             'listen-deconz',
+                            'subscribe-chromecast',
                             'millis-solar',
                             'millis-crontab',
                             'put-deconz',
                             'mdns-info',
                             'subscribe-esp',
                             'switch-esp',
-                            'light-esp'])
+                            'service-esp',
+                            'light-esp',
+                            'state-esp'])
                         )
 
             elif op == 'shutdown':
@@ -173,10 +177,23 @@ class RadialePod(object):
             asyncio.create_task(
                     mqtt.mqtt_listen(self.out, id, opts))
 
+        elif var.endswith('subscribe-chromecast*'):
+            sn = opts['service-name']
+            assert sn
+            svc = self.chromecast.get(sn)
+
+            _mdns = self.services.get('mdns')
+
+            if svc is None:
+                assert mdns is not None
+                self.chromecast[sn] = \
+                    svc = chromecast.Chromecast(self.out, id, _mdns, sn)
+
+                await asyncio.create_task(svc.start())
+
         elif var.endswith('subscribe-esp*'):
             sn = opts['service-name']
-            assert sn is not None
-            assert len(sn) > 0
+            assert sn
             svc = self.esp.get(sn)
 
             _mdns = self.services.get('mdns')
@@ -211,6 +228,18 @@ class RadialePod(object):
             service = self.esp.get(sn)
             assert service
             await service.light_command(id, opts['key'], opts['params'])
+
+        elif var.endswith('service-esp*'):
+            sn = opts['service-name']
+            service = self.esp.get(sn)
+            assert service
+            await service.service_command(id, opts['key'], opts['params'])
+
+        elif var.endswith('state-esp*'):
+            sn = opts['service-name']
+            service = self.esp.get(sn)
+            assert service
+            await service.state_update(id, opts['entity_id'], opts['attribute'], opts['state'])
 
         elif var.endswith('millis-solar*'):
             ms = schedule.ms_until_solar(opts)

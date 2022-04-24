@@ -14,7 +14,7 @@
     (cond 
       (fn? on)
       (when-let [nm (on m)]
-        (async/>!! send-chan (merge o nm))))))
+        (async/>!! send-chan nm)))))
 
 
 (defn on

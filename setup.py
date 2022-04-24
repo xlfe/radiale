@@ -1,6 +1,6 @@
-from distutils.core import setup
+import setuptools
 
-setup(
+setuptools.setup(
     name='radiale',
     packages=['radiale'],
     version='0.5.2',
@@ -11,7 +11,7 @@ setup(
     install_requires=[
         'websockets',
         'aiohttp',
-        'pychromecast',
+        'dmcast',
         'aioesphomeapi',
         'zeroconf',
         'bcoding',

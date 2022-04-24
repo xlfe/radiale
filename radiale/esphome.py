@@ -1,6 +1,7 @@
 import asyncio
 import aioesphomeapi
 from aioesphomeapi.core import APIConnectionError
+from aioesphomeapi.model import UserService
 from . import pod
 from typing import cast
 
@@ -78,7 +79,16 @@ class ESPHome(object):
                         "state": [str(state.key), state.state]
                         })
 
+        def esp_subscribe_ha_state(entity_id, attribute):
+            self.out.write_msg(
+                    id=self.id,
+                    data={
+                        "service-name": self.service_name,
+                        "ha-state-subscribe": [entity_id, attribute]
+                        })
+
         await self.cli.subscribe_states(esp_change_callback)
+        await self.cli.subscribe_home_assistant_states(esp_subscribe_ha_state)
 
     async def update_services(self):
 
@@ -93,6 +103,7 @@ class ESPHome(object):
             service_details[str(s.key)] = \
                 {**s.to_dict(), **{"type": "user-defined-service"}}
 
+        self.service_details = service_details
         self.out.write_msg(
                 id=self.id,
                 data={
@@ -107,6 +118,17 @@ class ESPHome(object):
 
     async def light_command(self, id, key, params):
         await self.cli.light_command(key, **params)
+        self.out.write_msg(id=id, data={"success": True})
+
+    async def service_command(self, id, key, params):
+        svc = self.service_details[str(key)].copy()
+        svc.pop('type')
+        service = UserService(**svc)
+        await self.cli.execute_service(service, params)
+        self.out.write_msg(id=id, data={"success": True})
+
+    async def state_update(self, id, entity_id, attribute, state): 
+        await self.cli.send_home_assistant_state(entity_id, attribute, state)
         self.out.write_msg(id=id, data={"success": True})
 
 

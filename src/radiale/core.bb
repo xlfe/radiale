@@ -2,19 +2,33 @@
   (:require 
 
     [radiale.watch :as watch]
+    [radiale.esp :as esp]
+    [radiale.state :as state]
     [clojure.core.async :as async]
     [taoensso.timbre :as timbre]
     [clojure.test :refer [function?]]
     [clojure.core.async :as a]
-    [babashka.pods :as pods]))
+    [babashka.pods :as pods]
+    [babashka.deps :as deps]))
     ; [radiale.schedule :as schedule]
     ; [radiale.deconz]))
 
 ; set log level
 ; (alter-var-root #'timbre/*config* #(assoc %1 :min-level :info))
 
+(deps/add-deps '{:deps {djblue/portal {:mvn/version "0.23.0"}}})
+
 (pods/load-pod ["./pod-xlfe-radiale.py"])
 (require '[pod.xlfe.radiale :as radiale])
+(require '[portal.api :as p])
+
+(defonce state* (atom {}))
+; (def portal (p/open {:port 8821}))
+; (reset! portal state*)
+; (add-tap #'p/submit) ; Add portal as a tap> target
+
+
+
 
 (def radiale-map
   {:listen-mdns     radiale/listen-mdns
@@ -27,7 +41,9 @@
    :subscribe-esp   radiale/subscribe-esp
    :sleep-ms        radiale/sleep-ms
    :switch-esp      radiale/switch-esp
-   :light-esp       radiale/light-esp})
+   :light-esp       radiale/light-esp
+   :service-esp     radiale/service-esp
+   :state-esp       radiale/state-esp})
 
 
 (defn try-fn
@@ -55,6 +71,13 @@
     
           :else (timbre/error m))))))
 
+(defn update-or-add
+  [ident state]
+  (if-let [a* (ident @state*)]
+    (reset! a* state)
+    (swap! state* assoc ident (atom state))))
+
+
 (defn run
   [config]
   {:pre [(sequential? config)]}
@@ -63,21 +86,22 @@
     (doseq [m config]
       (try-fn send-chan m))
 
+    (prn @state/state*)
     (while true
       (let [msg (async/<!! send-chan)]
 
-        (doseq [[k v] msg]
-          (timbre/debug k v))
-
-        (timbre/debug "\n\n")
+        (let [{:keys [::esp/state ::esp/ident]} msg]
+          (when ident
+            (update-or-add ident state)
+            (timbre/debug ident state)))
 
         (cond
           (map? msg)
           (try-fn send-chan msg)
-          
-          ; (sequential? msg)
-          ; (doseq [m msg]
-            ; (try-fn send-chan m))
+
+          (sequential? msg)
+          (doseq [m msg]
+            (try-fn send-chan m))
 
           :else (timbre/error msg))))))
                               
