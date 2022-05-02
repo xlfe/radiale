@@ -22,7 +22,6 @@
 (require '[pod.xlfe.radiale :as radiale])
 (require '[portal.api :as p])
 
-(defonce state* (atom {}))
 ; (def portal (p/open {:port 8821}))
 ; (reset! portal state*)
 ; (add-tap #'p/submit) ; Add portal as a tap> target
@@ -39,6 +38,7 @@
    :put-deconz      radiale/put-deconz
    :mdns-info       radiale/mdns-info
    :subscribe-esp   radiale/subscribe-esp
+   :subscribe-chromecast radiale/subscribe-chromecast
    :sleep-ms        radiale/sleep-ms
    :switch-esp      radiale/switch-esp
    :light-esp       radiale/light-esp
@@ -47,32 +47,32 @@
 
 
 (defn try-fn
-  [send-chan m]
-  (watch/match-message send-chan m)
+  [send-chan state* m]
+  (watch/match-message send-chan state* m)
   (let [clean-m (dissoc m ::fn ::then)]
     (if-let [fn- (::fn m)]
 
       ; if there is a ::fn specified, call it now after removing it from the map
-      (fn- radiale-map send-chan (dissoc m ::fn))
+      (fn- radiale-map send-chan state* (dissoc m ::fn))
 
       ; if not, check for a ::then
       ; If so, merge the map and try again for a fn
       (when-let [then (::then m)]
         (cond
           (fn? then)
-          (try-fn send-chan (then clean-m))
+          (try-fn send-chan state* (then clean-m))
 
           (map? then)
-          (try-fn send-chan (merge clean-m then))
+          (try-fn send-chan state* (merge clean-m then))
         
           (sequential? then)
           (doseq [t then]
-            (try-fn send-chan (merge clean-m t)))
+            (try-fn send-chan state* (merge clean-m t)))
     
           :else (timbre/error m))))))
 
 (defn update-or-add
-  [ident state]
+  [state* ident state]
   (if-let [a* (ident @state*)]
     (reset! a* state)
     (swap! state* assoc ident (atom state))))
@@ -81,32 +81,29 @@
 (defn run
   [config]
   {:pre [(sequential? config)]}
-  (let [send-chan (a/chan 64)]
+  (let [send-chan (a/chan 64)
+        state* (atom {})]
+
+    (state/watch-state send-chan state*)
 
     (doseq [m config]
-      (try-fn send-chan m))
+      (try-fn send-chan state* m))
 
-    (prn @state/state*)
     (while true
       (let [msg (async/<!! send-chan)]
 
-        (let [{:keys [::esp/state ::esp/ident]} msg]
-          (when ident
-            (update-or-add ident state)
-            (timbre/debug ident state)))
+        ; (let [{:keys [::esp/state ::esp/ident]} msg])
+          ; (when ident
+            ; (update-or-add state* ident state)
+        (timbre/debug msg)
 
         (cond
           (map? msg)
-          (try-fn send-chan msg)
+          (try-fn send-chan state* msg)
 
           (sequential? msg)
           (doseq [m msg]
-            (try-fn send-chan m))
+            (try-fn send-chan state* m))
 
           :else (timbre/error msg))))))
                               
-
-
-
-
-

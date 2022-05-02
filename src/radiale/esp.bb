@@ -2,79 +2,69 @@
   (:require
     [clojure.core.async :as async]
     [clojure.string]
+    [clojure.set]
     [taoensso.timbre :as timbre]))
 
-(defonce esp-registry* (atom {}))
-(def ESP-MDNS "_esphomelib._tcp.local.")
 
 
 (defn keywordize-esp-services
-  [service-name services]
+  [device-name services]
   (reduce-kv 
     (fn [m k v]
-      (timbre/debug k v)
-      (let [service-ident (keyword service-name (or 
-                                                  (:object_id v)
-                                                  (:name v)))] ;user-defined service
-        (assert (nil? (get m k)))
-        (assert (nil? (get m service-ident)))
-        (timbre/info "Discovered ESP-Home service:" service-ident)
-        (merge m {k service-ident
-                  service-ident v})))
+      (let [service-ident (keyword (or 
+                                     (:object_id v) ; esphome service
+                                     (:name v)))]   ;user-defined service
+        (timbre/info "Discovered ESP-Home service:" device-name service-ident)
+        (merge m {(name k) service-ident
+                  service-ident {:props v}})))
     {}
     services))
 
 
 (defn esp-logger
-  [bus m {:keys [service-name services state connected ha-state-subscribe]}]
-  (if services
-    (swap! esp-registry* merge (keywordize-esp-services service-name services))
-    (let [er      @esp-registry*]
-      (cond 
+  [bus state* m {:keys [service-name services state connected ha-state-subscribe]}]
+  (let [service-name (keyword service-name)]
+    (if services
+      (swap! state* assoc-in [:radiale.esp service-name] (keywordize-esp-services service-name services))
+      (let [er      (:radiale.esp @state*)]
+        (cond 
 
-        (some? connected)
-        (doseq [service-ident (filter #(= service-name (namespace %)) (keys er))]
-          (async/>!! bus (merge m {::connected connected 
-                                   ::service (get er service-ident)
-                                   ::ident service-ident})))
+          ; device connection status changed
+          (some? connected)
+          (swap! state* assoc-in [:radiale.esp service-name :connected] connected)
              
-        (some? ha-state-subscribe)
-        (timbre/debug "SUBSCRIBE" service-name ha-state-subscribe)
+          (some? ha-state-subscribe)
+          (swap! state* update-in (into [:radiale.subscription] ha-state-subscribe) 
+                 clojure.set/union (set [:radiale.esp service-name]))
 
-        :else
-        (let [
-              [k state]     state
-              service-ident (get er (keyword k))
-              service       (get er service-ident)]
-
-          (async/>!! bus (merge m {::state state 
-                                   ::service service
-                                   ::ident service-ident}))))))) 
-
+          :else
+          (let [
+                [k state]     state
+                service-ident (get-in er [service-name k])]
+            (swap! state* assoc-in [:radiale.esp service-name service-ident :state] state)))))))
 
 (defn discover
-  [{:keys [listen-mdns mdns-info subscribe-esp]} bus m]
+  [{:keys [listen-mdns mdns-info subscribe-esp]} bus state* m]
   (listen-mdns 
-   {:service-type ESP-MDNS} 
+   {:service-type  "_esphomelib._tcp.local."}
    (fn [{:keys [state-change service-name] :as mdns-state}]
-     (let [service-name (first (clojure.string/split service-name #"\."))]
-        (when (or 
-                (= state-change "updated")
-                (= state-change "added"))
-          (subscribe-esp {:service-name service-name}
-            (partial esp-logger bus m)))))))
+      (when (or 
+              (= state-change "updated")
+              (= state-change "added"))
+        (subscribe-esp {:service-name service-name}
+          (partial esp-logger bus state* m))))))
 
 
 
 (defn esp-base-data
-  [ident]
+  [state* ident]
   {:service-name (namespace ident) 
-   :key (get-in @esp-registry* [ident :key])})
+   :key (get-in @state* [:radiale.esp (keyword (namespace ident)) (keyword (name ident)) :props :key])})
    
 (defn switch
-  [{:keys [switch-esp]} bus {:keys [::ident ::state] :as m}]
+  [{:keys [switch-esp]} bus state* {:keys [::ident ::state] :as m}]
   (switch-esp (merge 
-                (esp-base-data ident)
+                (esp-base-data state* ident)
                 {:state state})
     (fn [r]
       (prn r)))
@@ -83,10 +73,10 @@
 
   
 (defn service
-  [{:keys [service-esp]} bus {:keys [::ident ::params] :as m}]
+  [{:keys [service-esp]} bus state* {:keys [::ident ::params] :as m}]
 
   (service-esp (merge 
-                   (esp-base-data ident)
+                   (esp-base-data state* ident)
                    {:params params})
       (fn [r]
         (timbre/debug ident params r)))
@@ -94,7 +84,7 @@
 
   
 (defn light
-  [{:keys [light-esp]} bus {:keys [::ident ::params] :as m}]
+  [{:keys [light-esp]} bus state* {:keys [::ident ::params] :as m}]
 
   ; params:
     ; state: Optional[bool] = None,
@@ -111,7 +101,7 @@
     ; effect: Optional[str] = None,])
 
   (light-esp (merge 
-                 (esp-base-data ident)
+                 (esp-base-data state* ident)
                  {:params params})
       (fn [r]
         (timbre/debug ident params r)))
@@ -119,7 +109,7 @@
 
   
 (defn state
-  [{:keys [state-esp]} bus {:keys [::ident ::entity-id ::attribute ::state] :as m}]
+  [{:keys [state-esp]} bus state* {:keys [::ident ::entity-id ::attribute ::state] :as m}]
 
   (state-esp {:service-name ident
               :entity_id entity-id

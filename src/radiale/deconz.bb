@@ -6,59 +6,67 @@
 
 
 
-(defonce deconz-config* (atom nil))
-(def known-service-types #{:lights :sensors :groups :scenes})
+(def known-service-types {:lights :light
+                          :sensors :sensor})
+
+
 
 ; unlike esp devices, deconz device names are likely to contain spaces, so just use the ID 
 ; noting that this is not stable
 
+(defn deconz-ident
+  [device-type props]
+  [
+      (keyword (subs device-type 0 (- (count device-type) 1)))
+      (keyword (:name props))])
+
 (defn store-deconz-config
-  [result]
+  [state* result]
   (doseq [[t s] result]
-    (when (t known-service-types)
-      (doseq [[k v] s]
-        (let [ident (keyword (str (name t) "-" (name k)))] 
-          (swap! deconz-config* assoc ident (merge {::service t ::id (name k)} v))
-          (timbre/debug "Discovered Deconz service" 
-                        ident
-                        "name:" (:name v)))))))
+    (when (get known-service-types t)
+      (doseq [[id {:keys [state] :as props}] s]
+        (let [[device ident] (deconz-ident (name t) props)
+              uid   (:uniqueid props)]
+          (timbre/debug "Discovered Deconz service" ident)
+          (swap! state* assoc-in [:radiale.deconz device ident :props] (merge 
+                                                                         (dissoc props :state)
+                                                                         {:service (name t)
+                                                                          :id id}))
+          (swap! state* assoc-in [:radiale.deconz device ident :state] state)
+          (swap! state* assoc-in [:radiale.deconz device uid] ident))))))
 
 (defn state-change
-  [{:keys [r state id] :as e} bus m]
-  (let [ident (keyword (str r "-" id))
-        config  (get @deconz-config* ident)]
-
-    (if state
-      (if (nil? config)
-        (timbre/error "event received for UNKOWN DEVICE" e)
-        (async/>!! bus (merge m 
-                              {::state state
-                               ::service config
-                               ::ident ident})))
-      (swap! deconz-config* update ident merge (:attr e)))))
+  [{:keys [uniqueid r state attr] :as e} bus state* m]
+  (when-let [device (some->> r keyword (get known-service-types) name)]
+    (when-let[ident (get-in @state* [:radiale.deconz device uniqueid])]
+      (if state
+        (swap! state* update-in [:radiale.deconz device ident :state] merge state)
+        (swap! state* update-in [:radiale.deconz device ident :props] merge attr)))))
 
 
 (defn discover
-  [{:keys [listen-deconz]} bus {:keys [::api-key ::host] :as m}]
+  [{:keys [listen-deconz]} bus state* {:keys [::api-key ::host] :as m}]
   (listen-deconz 
     {:api-key api-key :host host} 
     (fn [result]
-      (if (nil? @deconz-config*)
-        (store-deconz-config result)
-        (state-change result bus (dissoc m ::api-key ::host))))))
+      (if (nil? (get-in @state* [:radiale.deconz]))
+        (store-deconz-config state* result)
+        (state-change result bus state* (dissoc m ::api-key ::host))))))
 
 
 (defn get-config
-  [ident]
-  (let [{:keys [::id ::service]}  (get @deconz-config* ident)]
+  [state* ident]
+  (let [device (keyword (namespace ident))
+        ident  (keyword (name ident))
+        {:keys [:id :service]}  (get-in @state* [:radiale.deconz device ident :props])]
     {:id id :type service}))
 
 (defn put
-  [{:keys [put-deconz]} bus {:keys [::state ::ident] :as m}]
+  [{:keys [put-deconz]} bus state* {:keys [::state ::ident] :as m}]
   (doseq [i (if (sequential? ident) ident [ident])]
     (doseq [s (if (sequential? state) state [state])]
       (put-deconz 
-        (merge (get-config i) 
+        (merge (get-config state* i) 
                {:state s})
         (fn [r]
           (timbre/debug i s r)))))

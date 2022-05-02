@@ -8,17 +8,17 @@
 
 
 (defn match-message
-  [send-chan m]
+  [send-chan state* m]
   (doseq [{:keys [::on] :as o}  @watches*]
 
     (cond 
       (fn? on)
-      (when-let [nm (on m)]
+      (when-let [nm (on state* m)]
         (async/>!! send-chan nm)))))
 
 
 (defn on
-  [rm send-chan m]
+  [rm send-chan _ m]
   (swap! watches* conj m))
   
 

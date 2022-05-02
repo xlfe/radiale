@@ -30,7 +30,7 @@
        s-pool))))
 
 (defn crontab
-  [{:keys [millis-crontab]} send-chan {:keys [::params ::rc/desc] :as m}]
+  [{:keys [millis-crontab]} send-chan state* {:keys [::params ::rc/desc] :as m}]
   (run-schedule 
     true 
     aa/after 
@@ -39,7 +39,7 @@
     desc))
 
 (defn solar
-  [{:keys [millis-solar]} send-chan {:keys [::params ::rc/desc] :as m}]
+  [{:keys [millis-solar]} send-chan state* {:keys [::params ::rc/desc] :as m}]
   (run-schedule 
     true 
     aa/after 
@@ -48,7 +48,7 @@
     desc))
 
 (defn after
-  [_ send-chan {:keys [::seconds ::rc/desc] :as m}]
+  [_ send-chan state* {:keys [::seconds ::rc/desc] :as m}]
   (run-schedule 
     false 
     aa/after 
@@ -57,7 +57,7 @@
     desc))
 
 (defn every
-  [_ send-chan {:keys [::seconds ::rc/desc] :as m}]
+  [_ send-chan state* {:keys [::seconds ::rc/desc] :as m}]
   (run-schedule 
     false 
     aa/every 
