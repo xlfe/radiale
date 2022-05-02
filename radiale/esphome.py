@@ -9,7 +9,7 @@ from typing import cast
 SERVICE_TYPE = "_esphomelib._tcp.local."
 
 
-class ESPHome(object):
+class ESPHome():
 
     def __init__(self, out, id, mdns, service_name):
 
@@ -58,8 +58,7 @@ class ESPHome(object):
     async def connect(self):
 
         pod.eprint(f'ESP Connecting {self.service_name}')
-        info = await self.mdns.get_info(
-                SERVICE_TYPE, f'{self.service_name}.{SERVICE_TYPE}')
+        info = await self.mdns.get_info(SERVICE_TYPE, self.service_name)
 
         assert info is not None
         hosts = info.parsed_scoped_addresses()
@@ -127,7 +126,7 @@ class ESPHome(object):
         await self.cli.execute_service(service, params)
         self.out.write_msg(id=id, data={"success": True})
 
-    async def state_update(self, id, entity_id, attribute, state): 
+    async def state_update(self, id, entity_id, attribute, state):
         await self.cli.send_home_assistant_state(entity_id, attribute, state)
         self.out.write_msg(id=id, data={"success": True})
 

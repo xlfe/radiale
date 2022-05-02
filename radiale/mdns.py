@@ -4,6 +4,7 @@ from zeroconf.asyncio import AsyncServiceBrowser, \
 
 from typing import cast
 import asyncio
+from . import pod
 
 
 state_map = {
@@ -13,6 +14,7 @@ state_map = {
 
 
 async def mdns_state_change(o, id, zeroconf, service_type, name, state_change):
+    name, _ = name.split('.', 1)
     o.write_msg(
                 id=id,
                 data={
@@ -29,7 +31,7 @@ class MDNS():
         return self
 
     async def get_info(self, st, sn):
-        info = AsyncServiceInfo(st, sn)
+        info = AsyncServiceInfo(st, f'{sn}.{st}')
         await info.async_request(self.aiozc.zeroconf, 3000)
         return info
 

@@ -189,7 +189,7 @@ class RadialePod(object):
                 self.chromecast[sn] = \
                     svc = chromecast.Chromecast(self.out, id, _mdns, sn)
 
-                await asyncio.create_task(svc.start())
+                await asyncio.create_task(svc.connect())
 
         elif var.endswith('subscribe-esp*'):
             sn = opts['service-name']
@@ -256,6 +256,29 @@ class RadialePod(object):
                 ms = schedule.ms_until_solar(opts)
 
             self.out.write_msg(id=id, status="done", data=dict(ms=ms))
+
+
+class ProxyProvider():
+
+    def __init__(self, out, id, mdns, service_name):
+        pass
+
+    def proxy_command(self, name, params):
+        pass
+
+    def do_connect(self):
+        pass
+
+    def do_disconnect(self):
+        pass
+
+    def on_connected(self):
+        pass
+
+    def on_disconnected(self):
+        pass
+
+
 
 
 

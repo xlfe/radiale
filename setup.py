@@ -3,7 +3,7 @@ import setuptools
 setuptools.setup(
     name='radiale',
     packages=['radiale'],
-    version='0.5.2',
+    version='0.5.3',
     license='EPL',
     description='radiale',
     url='https://github.com/xlfe/radiale',
