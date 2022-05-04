@@ -66,7 +66,10 @@ class ESPHome():
             raise APIConnectionError()
 
         self.cli = aioesphomeapi.APIClient(hosts[0], info.port, None)
-        await self.cli.connect(on_stop=self.on_disconnect, login=True)
+        try:
+            await self.cli.connect(on_stop=self.on_disconnect, login=True)
+        except aioesphomeapi.core.TimeoutAPIError:
+            raise APIConnectionError()
 
     async def subscribe(self):
 

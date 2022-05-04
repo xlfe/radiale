@@ -3,7 +3,7 @@ import setuptools
 setuptools.setup(
     name='radiale',
     packages=['radiale'],
-    version='0.5.3',
+    version='0.5.5',
     license='EPL',
     description='radiale',
     url='https://github.com/xlfe/radiale',
@@ -19,7 +19,8 @@ setuptools.setup(
         'boltons',
         'celery',
         'astral',
-        'pytz'
+        'pytz',
+        'dmcast'
     ],
     classifiers=[
      'Development Status :: 3 - Alpha',

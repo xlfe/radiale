@@ -34,7 +34,7 @@ def make_clj_code(fn_name):
 
 
 def describe_this(fn_names):
-    d = [{"name": "sleep-ms"}]
+    d = [{"name": "astral-now"}, {"name": "sleep-ms"}]
     for fs in fn_names:
         d.extend(make_clj_code(fs))
     return {"format": "json",
@@ -133,7 +133,6 @@ class RadialePod(object):
                             status="error",
                             data=repr(ex_value))
 
-
     async def invoke(self, msg):
         var = msg["var"]
         id = msg["id"]
@@ -142,6 +141,12 @@ class RadialePod(object):
         if var.endswith('sleep-ms'):
             await asyncio.sleep(int(opts)/1000.0)
             self.out.write_msg(id=id, status="done", data=opts)
+
+        elif var.endswith('astral-now'):
+            self.out.write_msg(
+                    id=id,
+                    status="done",
+                    data=schedule.astral_now(**opts))
 
         elif var.endswith('listen-mdns*'):
             if 'mdns' not in self.services:

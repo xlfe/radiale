@@ -18,6 +18,29 @@ def only_next(n, o, a, b):
     return (c - n).total_seconds() * 1000
 
 
+def astral_now(lat, lon, tz):
+
+    city = LocationInfo(None, None, tz, lat, lon)
+    tz = pytz.timezone(tz)
+    now = datetime.now(tz=tz)
+    s = sun(city.observer, date=now, tzinfo=tz)
+
+    if now < s['dawn']:
+        return "night"
+
+    elif now < s['sunrise']:
+        return "sunrise"
+
+    elif now < s['sunset']:
+        return "day"
+
+    elif now < s['dusk']:
+        return "sunset"
+
+    else:
+        return "night"
+
+
 def astral_next_events(lat, lon, tz, offset_seconds):
 
     city = LocationInfo(None, None, tz, lat, lon)
