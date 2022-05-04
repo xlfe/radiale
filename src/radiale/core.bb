@@ -43,7 +43,8 @@
    :switch-esp      radiale/switch-esp
    :light-esp       radiale/light-esp
    :service-esp     radiale/service-esp
-   :state-esp       radiale/state-esp})
+   :state-esp       radiale/state-esp
+   :astral-now      radiale/astral-now})
 
 
 (defn try-fn
@@ -95,7 +96,7 @@
         ; (let [{:keys [::esp/state ::esp/ident]} msg])
           ; (when ident
             ; (update-or-add state* ident state)
-        (timbre/debug msg)
+        ; (timbre/debug (prn-str msg))
 
         (cond
           (map? msg)
