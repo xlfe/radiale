@@ -2,8 +2,7 @@
   (:require 
     [clojure.data]
     [clojure.core.async :as async]
-    [taoensso.timbre :as timbre]
-    [babashka.deps :as deps]))
+    [taoensso.timbre :as timbre]))
 
 
 

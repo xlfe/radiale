@@ -1,0 +1,20 @@
+FROM openjdk:19-slim
+
+RUN apt-get -y update && apt-get install -y python3.9 python3-pip rlwrap git curl
+
+RUN curl -O https://download.clojure.org/install/linux-install.sh && \
+        chmod +x linux-install.sh && ./linux-install.sh && rm ./linux-install.sh
+
+COPY ./deps.edn /opt/radiale/
+RUN cd /opt/radiale/ && clj -P
+
+COPY ./start.sh /opt/radiale/
+COPY ./pod-xlfe-radiale.py /opt/radiale/
+
+COPY ./ /tmp/radiale
+WORKDIR /tmp/radiale
+RUN python3.9 /tmp/radiale/setup.py develop
+WORKDIR /root
+ENTRYPOINT ["/opt/radiale/start.sh"]
+
+

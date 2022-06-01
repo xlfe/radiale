@@ -26,7 +26,7 @@ class Deconz:
         async with aiohttp.ClientSession() as session:
             async with session.get(config) as response:
                 config_data = await response.json()
-                out.write_msg(id=id, data=config_data)
+                out.write_msg(id=id, data=dict(radialeconfig=config_data))
 
                 self.uri = "ws://{}:{}".format(
                         opts['host'],

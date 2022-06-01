@@ -32,3 +32,13 @@ see `example.bb`
 ```bash
 bb example.bb
 ```
+
+
+### integrations
+
+
+
+#### Deconz
+
+device = :light/bedroom-1, :sensor/great
+

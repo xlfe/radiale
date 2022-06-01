@@ -5,11 +5,7 @@
     [babashka.pods :as pods]
     [radiale.core :as rc]
     [clojure.tools.logging :as log]
-    [babashka.deps :as deps]))
-
-(deps/add-deps '{:deps {net.xlfe/at-at {:mvn/version "1.3.1"}}})
-
-(require '[overtone.at-at :as aa])
+    [overtone.at-at :as aa]))
 
 (def s-pool (aa/mk-pool))
 
@@ -18,7 +14,7 @@
  [schedule-again? atat-fn sched-fn call-fn state* unique desc] 
 
  (when-let [existing (get-in @state* [:radiale.schedule :unique unique])]
-   (aa/cancel-job existing true))
+   (aa/kill existing))
  (sched-fn 
     (fn [{:keys [ms] :as n}]
       (when desc

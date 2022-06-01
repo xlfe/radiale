@@ -2,32 +2,30 @@
   (:require 
 
     [radiale.watch :as watch]
+    [clojure.edn :as edn]
     [radiale.esp :as esp]
     [radiale.state :as state]
     [clojure.core.async :as async]
     [taoensso.timbre :as timbre]
     [clojure.test :refer [function?]]
     [clojure.core.async :as a]
-    [babashka.pods :as pods]
-    [babashka.deps :as deps]))
-    ; [radiale.schedule :as schedule]
-    ; [radiale.deconz]))
+    [babashka.pods :as pods]))
 
 ; set log level
-; (alter-var-root #'timbre/*config* #(assoc %1 :min-level :info))
+(timbre/set-level! :debug)
 
-(deps/add-deps '{:deps {djblue/portal {:mvn/version "0.23.0"}}})
+(timbre/info "info")
+(timbre/debug "info")
+; (deps/add-deps '{:deps {djblue/portal {:mvn/version "0.23.0"}}})
 
-(pods/load-pod ["./pod-xlfe-radiale.py"])
-(require '[pod.xlfe.radiale :as radiale])
-(require '[portal.api :as p])
+; (require '[portal.api :as p])
 
 ; (def portal (p/open {:port 8821}))
 ; (reset! portal state*)
 ; (add-tap #'p/submit) ; Add portal as a tap> target
 
-
-
+(pods/load-pod ["./pod-xlfe-radiale.py"])
+(require '[pod.xlfe.radiale :as radiale])
 
 (def radiale-map
   {:listen-mdns     radiale/listen-mdns
@@ -88,6 +86,7 @@
     (state/watch-state send-chan state*)
 
     (doseq [m config]
+      (timbre/debug m)
       (try-fn send-chan state* m))
 
     (while true
@@ -96,7 +95,8 @@
         ; (let [{:keys [::esp/state ::esp/ident]} msg])
           ; (when ident
             ; (update-or-add state* ident state)
-        ; (timbre/debug (prn-str msg))
+        (timbre/debug (prn-str msg))
+        ; (prn msg)
 
         (cond
           (map? msg)
@@ -107,4 +107,3 @@
             (try-fn send-chan state* m))
 
           :else (timbre/error msg))))))
-                              

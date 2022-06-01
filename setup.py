@@ -9,10 +9,11 @@ setuptools.setup(
     url='https://github.com/xlfe/radiale',
     keywords=['home-automation'],
     install_requires=[
+        'protobuf<4.0,>=3.12.2',
+        'aioesphomeapi',
         'websockets',
         'aiohttp',
         'dmcast',
-        'aioesphomeapi',
         'zeroconf',
         'bcoding',
         'asyncio-mqtt',
