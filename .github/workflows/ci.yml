@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ] # Or your default branch, e.g., master
+  pull_request:
+    branches: [ main ] # Or your default branch
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4 # Updated to v4
+
+    - name: Set up Java
+      uses: actions/setup-java@v4 # Updated to v4
+      with:
+        distribution: 'temurin'
+        java-version: '17' # As specified in Dockerfile-dev (openjdk:19-slim implies newer is fine)
+
+    - name: Set up Python
+      uses: actions/setup-python@v5 # Updated to v5
+      with:
+        python-version: '3.9'
+
+    - name: Install Clojure CLI
+      uses: DeLaGuardo/setup-clojure@12.1 # Check for latest version of this action
+      with:
+        cli: 'latest' # Or a specific version used by the project
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+        pip install -e . # Installs radiale in editable mode with its deps
+
+    - name: Run Clojure tests
+      run: clojure -M:test
+
+    - name: Run Python tests
+      run: pytest tests/

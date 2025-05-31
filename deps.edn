@@ -1,4 +1,4 @@
-{:paths ["src"]
+{:paths ["src" "test"]
  :deps {
         org.clojure/clojure         {:mvn/version "1.11.1"},
         org.clojure/core.async      {:mvn/version "1.5.648"}
@@ -13,4 +13,7 @@
 
  :aliases
  {:build {:deps {io.github.seancorfield/build-clj {:git/tag "v0.8.0" :git/sha "9bd8b8a"}}
-          :ns-default build}}}
+          :ns-default build}
+  :test {:extra-paths ["test"]
+         :main-opts ["-m" "clojure.main" "-e" "(require 'clojure.java.io) (doseq [f (->> (file-seq (clojure.java.io/file \"test\")) (filter #(clojure.string/ends-with? (.getName %) \"_test.clj\")))] (load-file (.getAbsolutePath f))) (let [results (clojure.test/run-all-tests #\"radiale.*-test\")] (println (str \"Tests failed: \" (:fail results) \", Errors: \" (:error results))) (System/exit (if (and (zero? (:fail results)) (zero? (:error results))) 0 1)))"]
+         }}}
