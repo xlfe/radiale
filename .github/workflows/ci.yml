@@ -39,7 +39,7 @@ jobs:
         pip install -e . # Installs radiale in editable mode with its deps
 
     - name: Run Clojure tests
-      run: clojure -X:test
+      run: clojure -M:test
 
     - name: Run Python tests
       run: pytest tests/
