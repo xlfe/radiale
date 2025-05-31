@@ -1,0 +1,4 @@
+pytest
+pytest-cov
+pytest-asyncio
+# pytest-asyncio is needed for testing asyncio code with pytest
