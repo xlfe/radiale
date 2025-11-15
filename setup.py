@@ -15,8 +15,8 @@ setuptools.setup(
         "websockets",
         "aiohttp",
         "zeroconf",
-        "bcoding",
-        "asyncio-mqtt",
+        "fastbencode",
+        "aiomqtt",
         "boltons",
         "celery",
         "astral",
@@ -27,6 +27,6 @@ setuptools.setup(
         "Intended Audience :: Developers",
         "Topic :: Home Automation",
         "License :: OSI Approved :: Eclipse Public License 2.0 (EPL-2.0)",
-        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.12",
     ],
 )
