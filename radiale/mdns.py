@@ -51,8 +51,10 @@ class MDNS():
             if info.properties:
                 data['properties'] = {}
                 for key, value in info.properties.items():
-                    data['properties'][key.decode('utf-8')] =\
-                        value.decode('utf-8')
+                    # Handle cases where key or value might be None or already str
+                    key_str = key.decode('utf-8') if isinstance(key, bytes) else str(key) if key else ''
+                    value_str = value.decode('utf-8') if isinstance(value, bytes) else str(value) if value else ''
+                    data['properties'][key_str] = value_str
 
         self.out.write_msg(id=id, data=data)
 

@@ -29,9 +29,12 @@ class ESPHome():
             "connected": connected
         })
 
-    async def on_disconnect(self):
-        pod.eprint(f'ESP Disconnected from {self.service_name}')
+    async def on_disconnect(self, expected: bool = False):
+        pod.eprint(f'ESP Disconnected from {self.service_name} (expected={expected})')
         await self.connected_state(False)
+
+        if expected:
+            return
 
         while self.retries < 15:
 
@@ -60,18 +63,26 @@ class ESPHome():
         pod.eprint(f'ESP Connecting {self.service_name}')
         info = await self.mdns.get_info(SERVICE_TYPE, self.service_name)
 
-        assert info is not None
+        if info is None:
+            pod.eprint(f'ESP: No mDNS info found for {self.service_name}')
+            raise APIConnectionError(f"No mDNS info for {self.service_name}")
+
         hosts = info.parsed_scoped_addresses()
         if not hosts:
-            raise APIConnectionError()
+            pod.eprint(f'ESP: No hosts found for {self.service_name}')
+            raise APIConnectionError(f"No hosts for {self.service_name}")
 
         self.cli = aioesphomeapi.APIClient(hosts[0], info.port, None)
         try:
             await self.cli.connect(on_stop=self.on_disconnect, login=True)
         except aioesphomeapi.core.TimeoutAPIError:
-            raise APIConnectionError()
+            self.cli = None
+            raise APIConnectionError(f"Timeout connecting to {self.service_name}")
 
     async def subscribe(self):
+        if self.cli is None:
+            pod.eprint(f'ESP: Cannot subscribe - not connected to {self.service_name}')
+            return
 
         def esp_change_callback(state):
             self.out.write_msg(
@@ -89,10 +100,14 @@ class ESPHome():
                         "ha-state-subscribe": [entity_id, attribute]
                         })
 
-        await self.cli.subscribe_states(esp_change_callback)
-        await self.cli.subscribe_home_assistant_states(esp_subscribe_ha_state)
+        # subscribe_states and subscribe_home_assistant_states are synchronous in newer aioesphomeapi
+        self.cli.subscribe_states(esp_change_callback)
+        self.cli.subscribe_home_assistant_states(esp_subscribe_ha_state)
 
     async def update_services(self):
+        if self.cli is None:
+            pod.eprint(f'ESP: Cannot update services - not connected to {self.service_name}')
+            return
 
         sensors = await self.cli.list_entities_services()
         service_details = {}
@@ -115,22 +130,38 @@ class ESPHome():
                 )
 
     async def switch_command(self, id, key, state):
-        await self.cli.switch_command(key, state)
+        if self.cli is None:
+            self.out.write_msg(id=id, data={"success": False, "error": "Not connected"})
+            return
+        # switch_command is synchronous in newer aioesphomeapi
+        self.cli.switch_command(key, state)
         self.out.write_msg(id=id, data={"success": True})
 
     async def light_command(self, id, key, params):
-        await self.cli.light_command(key, **params)
+        if self.cli is None:
+            self.out.write_msg(id=id, data={"success": False, "error": "Not connected"})
+            return
+        # light_command is synchronous in newer aioesphomeapi
+        self.cli.light_command(key, **params)
         self.out.write_msg(id=id, data={"success": True})
 
     async def service_command(self, id, key, params):
+        if self.cli is None:
+            self.out.write_msg(id=id, data={"success": False, "error": "Not connected"})
+            return
         svc = self.service_details[str(key)].copy()
         svc.pop('type')
         service = UserService(**svc)
+        # execute_service is still async
         await self.cli.execute_service(service, params)
         self.out.write_msg(id=id, data={"success": True})
 
     async def state_update(self, id, entity_id, attribute, state):
-        await self.cli.send_home_assistant_state(entity_id, attribute, state)
+        if self.cli is None:
+            self.out.write_msg(id=id, data={"success": False, "error": "Not connected"})
+            return
+        # send_home_assistant_state is synchronous in newer aioesphomeapi
+        self.cli.send_home_assistant_state(entity_id, attribute, state)
         self.out.write_msg(id=id, data={"success": True})
 
 

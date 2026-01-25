@@ -143,14 +143,15 @@ async def test_esphome_on_disconnect_fails_all_retries(esphome_instance):
 
 @pytest.mark.asyncio
 async def test_esphome_subscribe(esphome_instance, mock_out_q):
-    esphome_instance.cli = AsyncMock()
-    esphome_instance.cli.subscribe_states = AsyncMock()
-    esphome_instance.cli.subscribe_home_assistant_states = AsyncMock()
+    esphome_instance.cli = MagicMock()  # Use MagicMock since subscribe methods are now synchronous
+    esphome_instance.cli.subscribe_states = MagicMock()
+    esphome_instance.cli.subscribe_home_assistant_states = MagicMock()
 
     await esphome_instance.subscribe()
 
-    esphome_instance.cli.subscribe_states.assert_awaited_once_with(ANY) # ANY for the callback
-    esphome_instance.cli.subscribe_home_assistant_states.assert_awaited_once_with(ANY) # ANY for the callback
+    # subscribe_states and subscribe_home_assistant_states are now synchronous calls
+    esphome_instance.cli.subscribe_states.assert_called_once_with(ANY) # ANY for the callback
+    esphome_instance.cli.subscribe_home_assistant_states.assert_called_once_with(ANY) # ANY for the callback
 
     # Test esp_change_callback (passed to subscribe_states)
     esp_change_callback = esphome_instance.cli.subscribe_states.call_args[0][0]
@@ -210,24 +211,24 @@ async def test_esphome_update_services(esphome_instance, mock_out_q):
 # --- Tests for command methods ---
 @pytest.mark.asyncio
 async def test_esphome_switch_command(esphome_instance, mock_out_q):
-    esphome_instance.cli = AsyncMock()
-    esphome_instance.cli.switch_command = AsyncMock()
+    esphome_instance.cli = MagicMock()  # switch_command is synchronous now
+    esphome_instance.cli.switch_command = MagicMock()
 
     await esphome_instance.switch_command(id="cmd_sw_1", key=123, state=True)
 
-    esphome_instance.cli.switch_command.assert_awaited_once_with(123, True)
+    esphome_instance.cli.switch_command.assert_called_once_with(123, True)
     mock_out_q.write_msg.assert_called_once_with(id="cmd_sw_1", data={"success": True})
 
 @pytest.mark.asyncio
 async def test_esphome_light_command(esphome_instance, mock_out_q):
-    esphome_instance.cli = AsyncMock()
-    esphome_instance.cli.light_command = AsyncMock()
+    esphome_instance.cli = MagicMock()  # light_command is synchronous now
+    esphome_instance.cli.light_command = MagicMock()
     params = {"state": True, "brightness": 128}
 
     await esphome_instance.light_command(id="cmd_lt_1", key=456, params=params)
 
     # The actual code passes key as positional arg, then **params
-    esphome_instance.cli.light_command.assert_awaited_once_with(456, **params)
+    esphome_instance.cli.light_command.assert_called_once_with(456, **params)
     mock_out_q.write_msg.assert_called_once_with(id="cmd_lt_1", data={"success": True})
 
 @pytest.mark.asyncio
@@ -256,8 +257,8 @@ async def test_esphome_service_command(esphome_instance, mock_out_q):
 
 @pytest.mark.asyncio
 async def test_esphome_state_update(esphome_instance, mock_out_q):
-    esphome_instance.cli = AsyncMock()
-    esphome_instance.cli.send_home_assistant_state = AsyncMock()
+    esphome_instance.cli = MagicMock()  # send_home_assistant_state is synchronous now
+    esphome_instance.cli.send_home_assistant_state = MagicMock()
 
     entity_id = "sensor.temp"
     attribute = "value"
@@ -265,5 +266,5 @@ async def test_esphome_state_update(esphome_instance, mock_out_q):
 
     await esphome_instance.state_update(id="cmd_st_1", entity_id=entity_id, attribute=attribute, state=state_val)
 
-    esphome_instance.cli.send_home_assistant_state.assert_awaited_once_with(entity_id, attribute, state_val)
+    esphome_instance.cli.send_home_assistant_state.assert_called_once_with(entity_id, attribute, state_val)
     mock_out_q.write_msg.assert_called_once_with(id="cmd_st_1", data={"success": True})

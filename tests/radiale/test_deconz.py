@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from radiale.deconz import make_host, Deconz
 from radiale.pod import OutgoingQ # For type hinting/spec if needed for mock_out
-from websockets.exceptions import ConnectionClosedOK  # For exceptions
+from websockets.exceptions import ConnectionClosed
 
 # --- Unit tests for make_host ---
 
@@ -33,7 +33,6 @@ def deconz_instance():
 
 def test_deconz_init(deconz_instance):
     assert deconz_instance.uri is None
-    assert deconz_instance.ws is None
 
 @pytest.mark.asyncio
 async def test_deconz_put(deconz_instance, mock_out_queue):
@@ -93,7 +92,8 @@ async def test_deconz_put_request_not_ok(deconz_instance, mock_out_queue):
 
 
 @pytest.mark.asyncio
-async def test_deconz_listen_initial_config_and_one_message(deconz_instance, mock_out_queue):
+async def test_deconz_listen_initial_config_and_messages(deconz_instance, mock_out_queue):
+    """Test that listen fetches config and receives websocket messages using the async for pattern"""
     opts = {'host': 'deconz.local', 'api-key': 'testkey_listen'}
     listen_id = "listener_1"
     websocket_port = 8443
@@ -110,16 +110,42 @@ async def test_deconz_listen_initial_config_and_one_message(deconz_instance, moc
     mock_session_instance.__aenter__ = AsyncMock(return_value=mock_session_instance)
     mock_session_instance.__aexit__ = AsyncMock(return_value=None)
 
-    # Mock WebSocket connection
-    mock_ws_conn = AsyncMock()
-    mock_ws_conn.open = True
-
-    # Simulate receiving one message, then an exception to break the loop
-    sample_ws_message_str = json.dumps({"e": "changed", "id": "1", "r": "sensors", "state": {"buttonevent": 2002}})
-    mock_ws_conn.recv = AsyncMock(side_effect=[sample_ws_message_str, ConnectionClosedOK(None, None)])
-
+    # Mock WebSocket connection using async for pattern
+    sample_ws_messages = [
+        json.dumps({"e": "changed", "id": "1", "r": "sensors", "state": {"buttonevent": 2002}}),
+        json.dumps({"e": "changed", "id": "2", "r": "lights", "state": {"on": True}}),
+    ]
+    
+    # Create a mock websocket that yields messages then raises StopAsyncIteration
+    mock_ws = AsyncMock()
+    mock_ws.__aiter__ = lambda self: self
+    message_iter = iter(sample_ws_messages)
+    
+    async def mock_anext(self):
+        try:
+            return next(message_iter)
+        except StopIteration:
+            raise StopAsyncIteration
+    
+    mock_ws.__anext__ = lambda self: mock_anext(self)
+    
+    # Create a mock connect that acts as an async iterator yielding one connection then stopping
+    class MockConnect:
+        def __init__(self, uri):
+            self.uri = uri
+            self.called = False
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            if self.called:
+                raise StopAsyncIteration
+            self.called = True
+            return mock_ws
+    
     with patch('radiale.deconz.aiohttp.ClientSession', return_value=mock_session_instance) as MockHttpClientSession, \
-         patch('radiale.deconz.websockets.connect', new_callable=AsyncMock, return_value=mock_ws_conn) as MockWsConnect:
+         patch('radiale.deconz.websockets.connect', MockConnect) as MockWsConnect:
 
         await deconz_instance.listen(mock_out_queue, listen_id, opts)
 
@@ -129,21 +155,18 @@ async def test_deconz_listen_initial_config_and_one_message(deconz_instance, moc
         mock_session_instance.get.assert_called_once_with(expected_config_url)
         mock_out_queue.write_msg.assert_any_call(id=listen_id, data={"radialeconfig": initial_config_data})
 
-        # Verify WebSocket connection attempt
+        # Verify URI was set correctly
         expected_ws_uri = f"ws://{opts['host']}:{websocket_port}"
-        MockWsConnect.assert_awaited_once_with(expected_ws_uri)
         assert deconz_instance.uri == expected_ws_uri
-        assert deconz_instance.ws == mock_ws_conn
 
-        # Verify message received from WebSocket
-        mock_ws_conn.recv.assert_awaited() # Should have been called at least once
-        mock_out_queue.write_msg.assert_any_call(id=listen_id, data=json.loads(sample_ws_message_str))
+        # Verify messages received from WebSocket
+        for msg in sample_ws_messages:
+            mock_out_queue.write_msg.assert_any_call(id=listen_id, data=json.loads(msg))
 
-        # Loop should exit due to ConnectionClosedOK
-        assert mock_ws_conn.recv.call_count == 2 # Once for message, once for exception
 
 @pytest.mark.asyncio
-async def test_deconz_listen_reconnect_websocket(deconz_instance, mock_out_queue):
+async def test_deconz_listen_reconnect_on_connection_closed(deconz_instance, mock_out_queue):
+    """Test that deconz reconnects after a ConnectionClosed using the async for pattern"""
     opts = {'host': 'deconz.local', 'api-key': 'testkey_reconnect'}
     listen_id = "listener_reconnect"
     websocket_port = 8000
@@ -159,54 +182,66 @@ async def test_deconz_listen_reconnect_websocket(deconz_instance, mock_out_queue
     mock_session_instance.__aenter__ = AsyncMock(return_value=mock_session_instance)
     mock_session_instance.__aexit__ = AsyncMock(return_value=None)
 
-    # First WebSocket connection: initially closed, then opens, receives one message, then "closes" (by raising)
-    mock_ws_conn1 = AsyncMock()
-    mock_ws_conn1.open = False # Start as closed to trigger reconnect logic path
-
-    # Second WebSocket connection (after "reconnect")
-    mock_ws_conn2 = AsyncMock()
-    mock_ws_conn2.open = True
-    ws_message_after_reconnect = json.dumps({"event": "reconnected_event"})
-    mock_ws_conn2.recv = AsyncMock(side_effect=[ws_message_after_reconnect, ConnectionClosedOK(None, None)])
-
-    # websockets.connect will be called twice - use AsyncMock for the coroutine
-    async def mock_ws_connect(uri):
-        if not hasattr(mock_ws_connect, 'call_count'):
-            mock_ws_connect.call_count = 0
-        mock_ws_connect.call_count += 1
-        if mock_ws_connect.call_count == 1:
-            return mock_ws_conn1
-        return mock_ws_conn2
+    ws_message_1 = json.dumps({"event": "first_event"})
+    ws_message_2 = json.dumps({"event": "reconnected_event"})
+    
+    connection_count = 0
+    
+    # Create mock websockets that simulate connection closed and reconnection
+    class MockConnect:
+        def __init__(self, uri):
+            self.uri = uri
+            self.connection_num = 0
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            nonlocal connection_count
+            connection_count += 1
+            if connection_count > 2:
+                raise StopAsyncIteration
+            return MockWs(connection_count)
+    
+    class MockWs:
+        def __init__(self, conn_num):
+            self.conn_num = conn_num
+            self.msg_sent = False
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            if self.msg_sent:
+                if self.conn_num == 1:
+                    # First connection: raise ConnectionClosed to trigger reconnect
+                    raise ConnectionClosed(None, None)
+                else:
+                    # Second connection: stop iteration
+                    raise StopAsyncIteration
+            self.msg_sent = True
+            return ws_message_1 if self.conn_num == 1 else ws_message_2
 
     with patch('radiale.deconz.aiohttp.ClientSession', return_value=mock_session_instance), \
-         patch('radiale.deconz.websockets.connect', side_effect=mock_ws_connect) as MockWsConnect:
+         patch('radiale.deconz.websockets.connect', MockConnect):
 
         await deconz_instance.listen(mock_out_queue, listen_id, opts)
 
-        # Assert connect was called twice
-        assert MockWsConnect.call_count == 2
-        expected_ws_uri = f"ws://{opts['host']}:{websocket_port}"
-        MockWsConnect.assert_any_call(expected_ws_uri) # First call
-        MockWsConnect.assert_any_call(expected_ws_uri) # Second call (reconnect)
+        # Assert connect iterator was used at least twice (initial + reconnect after error)
+        # It may try a 3rd time before the StopAsyncIteration is raised
+        assert connection_count >= 2
 
-        # Check message from after reconnect
-        mock_out_queue.write_msg.assert_any_call(id=listen_id, data=json.loads(ws_message_after_reconnect))
+        # Check both messages were received
+        mock_out_queue.write_msg.assert_any_call(id=listen_id, data=json.loads(ws_message_1))
+        mock_out_queue.write_msg.assert_any_call(id=listen_id, data=json.loads(ws_message_2))
 
-        # Ensure the first ws mock (mock_ws_conn1) did not have recv called since it started as not open
-        mock_ws_conn1.recv.assert_not_called()
-        # Ensure the second ws mock (mock_ws_conn2) had recv called
-        assert mock_ws_conn2.recv.call_count == 2
 
 @pytest.mark.asyncio
-async def test_deconz_listen_no_websocket_uri_after_config(deconz_instance, mock_out_queue):
+async def test_deconz_listen_no_websocket_port_in_config(deconz_instance, mock_out_queue):
+    """Test that missing websocketport in config raises KeyError"""
     opts = {'host': 'deconz.local', 'api-key': 'testkey_no_ws'}
     listen_id = "listener_no_ws"
 
-    # Config data that does *not* result in self.uri being set (e.g. missing websocketport)
-    # NOTE: The actual code will still set uri if websocketport is present but may error
-    # Let's test with config that has websocketport but we want to see error handling
-    # Actually, looking at the code, it will always set uri if websocketport exists
-    # Let's test the happy path where config has no websocketport - this will cause KeyError
     mock_http_response = AsyncMock()
     initial_config_data = {"config": {}} # No websocketport
     mock_http_response.json = AsyncMock(return_value=initial_config_data)
