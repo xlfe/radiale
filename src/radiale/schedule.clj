@@ -3,32 +3,36 @@
     [babashka.pods :as pods]
     [clojure.core.async :as async]
     [clojure.tools.logging :as log]
-    [overtone.at-at :as aa]
     [radiale.core :as rc]
+    [radiale.scheduler :as sched]
     [taoensso.timbre :as timbre]))
 
-(def s-pool (aa/mk-pool))
+(def s-pool (sched/mk-pool))
 
 
 (defn run-schedule
-  [schedule-again? atat-fn sched-fn call-fn state* unique desc]
+  [schedule-again? sched-fn-name sched-fn call-fn state* unique desc]
 
   (when-let [existing (get-in @state* [:radiale.schedule :unique unique])]
-    (aa/kill existing))
+    (sched/kill existing))
   (sched-fn
     (fn [{:keys [ms]
           :as   n}]
       (when desc
         (timbre/info "SCHEDULING" desc "in" (long (/ (or ms n) 1000)) "s"))
-      (let [jobinfo (atat-fn
-                      (or ms n)
-                      (fn []
-                        (swap! state* assoc-in [:radiale.schedule :unique unique] nil)
-                        (call-fn)
-                        (when schedule-again?
-                          (Thread/sleep 100)
-                          (run-schedule schedule-again? atat-fn sched-fn call-fn state* unique desc)))
-                      s-pool)]
+      (let [delay-ms      (or ms n)
+            sched-fn-impl (case sched-fn-name
+                            :after sched/after
+                            :every sched/every)
+            jobinfo       (sched-fn-impl
+                            delay-ms
+                            (fn []
+                              (swap! state* assoc-in [:radiale.schedule :unique unique] nil)
+                              (call-fn)
+                              (when schedule-again?
+                                (Thread/sleep 100)
+                                (run-schedule schedule-again? sched-fn-name sched-fn call-fn state* unique desc)))
+                            s-pool)]
         (when unique
           (swap! state* assoc-in [:radiale.schedule :unique unique] jobinfo))))))
 
@@ -36,13 +40,13 @@
   [{:keys [millis-crontab]} send-chan state*
    {:keys [::params ::at-most-once ::rc/desc]
     :as   m}]
-  (run-schedule true aa/after #(millis-crontab params %) #(async/>!! send-chan m) state* at-most-once desc))
+  (run-schedule true :after #(millis-crontab params %) #(async/>!! send-chan m) state* at-most-once desc))
 
 (defn solar
   [{:keys [millis-solar]} send-chan state*
    {:keys [::params ::at-most-once ::rc/desc]
     :as   m}]
-  (run-schedule true aa/after #(millis-solar params %) #(async/>!! send-chan m) state* at-most-once desc))
+  (run-schedule true :after #(millis-solar params %) #(async/>!! send-chan m) state* at-most-once desc))
 
 (defn after
   [_ send-chan state*
@@ -50,7 +54,7 @@
     :as   m}]
   (run-schedule
     false
-    aa/after
+    :after
     (fn [cb]
       (cb (* seconds 1000)))
     #(async/>!! send-chan m)
@@ -64,7 +68,7 @@
     :as   m}]
   (run-schedule
     false
-    aa/every
+    :every
     (fn [cb]
       (cb (* seconds 1000)))
     #(async/>!! send-chan m)
