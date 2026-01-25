@@ -6,13 +6,13 @@
 
 (defn store-deconz-config
   [service-type-namespaces state* result]
-  (doseq [[t s] result]
-    (when-let [t (get service-type-namespaces (keyword t))]
+  (doseq [[api-type s] result]
+    (when-let [namespace-kw (get service-type-namespaces (keyword api-type))]
       (doseq [[id
                {:keys [state]
                 :as   props}]
               s]
-        (let [ident (keyword (name t) (:name props))
+        (let [ident (keyword (name namespace-kw) (:name props))
               uid   (:uniqueid props)]
           (timbre/debug "discovered service" ident)
           (timbre/debug props)
@@ -20,7 +20,7 @@
             [ident :props]
             (merge
               (dissoc props :state)
-              {:service (name t)
+              {:service api-type ; Store the API type (e.g., "lights") not the namespace
                :id      id}))
           (swap! state* assoc-in [ident :state] state)
           (swap! state* assoc-in [uid] ident))))))

@@ -40,7 +40,7 @@
         (is
           (= {:name     "Light 1"
               :uniqueid "uid-l1"
-              :service  "radiale.light"
+              :service  "lights" ; API type (plural) for Deconz REST API
               :id       "1"}
              (get-in @state* [ident :props])))
         (is
@@ -53,7 +53,7 @@
         (is
           (= {:name     "Light 2"
               :uniqueid "uid-l2"
-              :service  "radiale.light"
+              :service  "lights" ; API type (plural) for Deconz REST API
               :id       "2"}
              (get-in @state* [ident :props])))
         (is
@@ -66,7 +66,7 @@
         (is
           (= {:name     "Sensor 1"
               :uniqueid "uid-s10"
-              :service  "radiale.sensor"
+              :service  "sensors" ; API type (plural) for Deconz REST API
               :id       "10"}
              (get-in @state* [ident :props])))
         (is
@@ -221,6 +221,62 @@
       (= {:id   "light-id-01"
           :type "lights"}
          (deconz/get-config state* :my-light)))))
+
+;; --- Integration test: store-deconz-config -> get-config -> put ---
+;; This test verifies the full flow works correctly with the Deconz API
+(deftest store-config-then-put-uses-correct-api-type-test
+  (testing "When a light is discovered and then controlled, the API type should be 'lights' (plural)"
+    (let [state*        (atom {})
+          bus           (chan 10)
+          ;; This mimics the actual config used in production
+          service-type-namespaces {:lights  :light
+                                   :sensors :sensor
+                                   :groups  :group}
+          ;; Simulated Deconz config response
+          config-result {"lights" {"9" {:name     "bed1-left"
+                                        :uniqueid "uid-bed1-left"
+                                        :state    {:on  false
+                                                   :bri 0}}}}
+          put-deconz-calls (atom [])]
+
+      ;; Step 1: Store the config (this happens on startup when Deconz is discovered)
+      (deconz/store-deconz-config service-type-namespaces state* config-result)
+
+      ;; Verify the light was stored
+      (is
+        (some? (get @state* :light/bed1-left))
+        "Light should be stored with namespace :light")
+
+      ;; Step 2: Now try to PUT to this light (this happens when a schedule fires)
+      (let [mocked-radiale-map {:put-deconz (fn [cmd cb]
+                                              (swap! put-deconz-calls conj {:cmd cmd})
+                                              (cb {:success true}))}
+            message {::deconz/ident :light/bed1-left
+                     ::deconz/state {:on  true
+                                     :bri 254}}]
+
+        (deconz/put mocked-radiale-map bus state* message)
+
+        ;; Verify the PUT was called with the correct API type
+        (is
+          (= 1 (count @put-deconz-calls))
+          "put-deconz should be called once")
+
+        (let [{:keys [cmd]} (first @put-deconz-calls)]
+          (is
+            (= "9" (:id cmd))
+            "Device ID should be '9'")
+          ;; THIS IS THE KEY ASSERTION - the type must be "lights" (plural) for the Deconz API
+          (is
+            (= "lights" (:type cmd))
+            "API type MUST be 'lights' (plural) not 'light' (singular) - Deconz API requires plural form")
+          (is
+            (= {:on  true
+                :bri 254}
+               (:state cmd))
+            "State should match")))
+
+      (close! bus))))
 
 ;; --- Unit tests for put ---
 (deftest put-test
