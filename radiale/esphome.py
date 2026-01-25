@@ -152,8 +152,8 @@ class ESPHome():
         svc = self.service_details[str(key)].copy()
         svc.pop('type')
         service = UserService(**svc)
-        # execute_service is still async
-        await self.cli.execute_service(service, params)
+        # execute_service is synchronous in newer aioesphomeapi
+        self.cli.execute_service(service, params)
         self.out.write_msg(id=id, data={"success": True})
 
     async def state_update(self, id, entity_id, attribute, state):
