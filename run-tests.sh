@@ -1,11 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
 echo "Running Python tests..."
 pytest tests/
 PY_EXIT_CODE=$?
 
 echo ""
 echo "Running Clojure tests..."
-clojure -X:test
+clojure -M:test
 CLJ_EXIT_CODE=$?
 
 if [ $PY_EXIT_CODE -ne 0 ] || [ $CLJ_EXIT_CODE -ne 0 ]; then

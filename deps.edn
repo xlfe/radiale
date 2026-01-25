@@ -1,17 +1,13 @@
-{:paths ["src" "test"]
- :deps {babashka/babashka.pods    {:git/sha "ed5e1f3390b9dfca564f66b6e79c739c3cd82d78"
-                                   :git/url "https://github.com/babashka/pods.git"}
-        com.taoensso/timbre       {:mvn/version "5.2.1"}
-        org.clojure/clojure       {:mvn/version "1.11.1"}
-        org.clojure/core.async    {:mvn/version "1.5.648"}
-        org.clojure/tools.logging {:mvn/version "1.2.4"}}
- :aliases
- {:build {:deps       {io.github.seancorfield/build-clj {:git/sha "9bd8b8a"
-                                                         :git/tag "v0.8.0"}}
-          :ns-default build}
-  :test
-  {:extra-deps {org.clojure/data.json {:mvn/version "2.4.0"}}
-   :extra-paths ["test"]
-   :main-opts
-   ["-m" "clojure.main" "-e"
-    "(require 'clojure.java.io) (doseq [f (->> (file-seq (clojure.java.io/file \"test\")) (filter #(clojure.string/ends-with? (.getName %) \"_test.clj\")))] (load-file (.getAbsolutePath f))) (let [results (clojure.test/run-all-tests #\"radiale.*-test\")] (println (str \"Tests failed: \" (:fail results) \", Errors: \" (:error results))) (System/exit (if (and (zero? (:fail results)) (zero? (:error results))) 0 1)))"]}}}
+{:paths   ["src" "test"]
+ :deps    {babashka/babashka.pods    {:git/sha "ed5e1f3390b9dfca564f66b6e79c739c3cd82d78"
+                                      :git/url "https://github.com/babashka/pods.git"}
+           com.taoensso/timbre       {:mvn/version "5.2.1"}
+           org.clojure/clojure       {:mvn/version "1.11.1"}
+           org.clojure/core.async    {:mvn/version "1.5.648"}
+           org.clojure/tools.logging {:mvn/version "1.2.4"}}
+ :aliases {:build {:deps       {io.github.seancorfield/build-clj {:git/sha "9bd8b8a"
+                                                                  :git/tag "v0.8.0"}}
+                   :ns-default build}
+           :test  {:extra-deps  {org.clojure/data.json {:mvn/version "2.4.0"}}
+                   :extra-paths ["test"]
+                   :main-opts   ["-m" "radiale.test-runner"]}}}

@@ -53,28 +53,47 @@
 ; (reset! portal state*)
 ; (add-tap #'p/submit) ; Add portal as a tap> target
 
-(pods/load-pod "./pod-xlfe-radiale.py")
-(require '[pod.xlfe.radiale :as radiale])
+;; Pod loading is deferred until init-pod! is called
+;; This allows tests to require this namespace without loading the pod
+(def ^:private pod-loaded? (atom false))
+(def ^:private radiale-ns (atom nil))
 
+(defn init-pod!
+  "Initialize the Python pod. Must be called before using radiale-map functions.
+   Safe to call multiple times - will only load the pod once."
+  []
+  (when-not @pod-loaded?
+    (pods/load-pod "./pod-xlfe-radiale.py")
+    (require '[pod.xlfe.radiale])
+    (reset! radiale-ns (find-ns 'pod.xlfe.radiale))
+    (reset! pod-loaded? true)
+    (println "Pod loaded")))
 
-(println "Pod loaded")
+(defn- get-pod-fn
+  "Get a function from the pod namespace. Throws if pod not initialized."
+  [fn-name]
+  (fn [& args]
+    (when-not @pod-loaded? (throw (ex-info "Pod not initialized. Call init-pod! first." {:fn fn-name})))
+    (apply (ns-resolve @radiale-ns fn-name) args)))
 
 (def radiale-map
-  {:listen-mdns          radiale/listen-mdns
-   :listen-mqtt          radiale/listen-mqtt
-   :listen-deconz        radiale/listen-deconz
-   :millis-solar         radiale/millis-solar
-   :millis-crontab       radiale/millis-crontab
-   :put-deconz           radiale/put-deconz
-   :mdns-info            radiale/mdns-info
-   :subscribe-esp        radiale/subscribe-esp
-   :subscribe-chromecast radiale/subscribe-chromecast
-   :sleep-ms             radiale/sleep-ms
-   :switch-esp           radiale/switch-esp
-   :light-esp            radiale/light-esp
-   :service-esp          radiale/service-esp
-   :state-esp            radiale/state-esp
-   :astral-now           radiale/astral-now})
+  "Map of pod function keywords to their implementations.
+   Pod must be initialized via init-pod! before these functions are called."
+  {:listen-mdns          (get-pod-fn 'listen-mdns)
+   :listen-mqtt          (get-pod-fn 'listen-mqtt)
+   :listen-deconz        (get-pod-fn 'listen-deconz)
+   :millis-solar         (get-pod-fn 'millis-solar)
+   :millis-crontab       (get-pod-fn 'millis-crontab)
+   :put-deconz           (get-pod-fn 'put-deconz)
+   :mdns-info            (get-pod-fn 'mdns-info)
+   :subscribe-esp        (get-pod-fn 'subscribe-esp)
+   :subscribe-chromecast (get-pod-fn 'subscribe-chromecast)
+   :sleep-ms             (get-pod-fn 'sleep-ms)
+   :switch-esp           (get-pod-fn 'switch-esp)
+   :light-esp            (get-pod-fn 'light-esp)
+   :service-esp          (get-pod-fn 'service-esp)
+   :state-esp            (get-pod-fn 'state-esp)
+   :astral-now           (get-pod-fn 'astral-now)})
 
 
 (defn try-fn
@@ -113,6 +132,7 @@
 (defn run
   [config]
   {:pre [(sequential? config)]}
+  (init-pod!)
   (let [send-chan (a/chan 64)
         state*    (atom {})]
 
