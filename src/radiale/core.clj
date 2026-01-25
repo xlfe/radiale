@@ -5,17 +5,46 @@
     [clojure.core.async :as async]
     [clojure.core.async :as a]
     [clojure.edn :as edn]
+    [clojure.string :as str]
     [clojure.test :refer [function?]]
     [radiale.esp :as esp]
     [radiale.state :as state]
     [radiale.watch :as watch]
     [taoensso.timbre :as timbre]))
 
-; set log level
-(timbre/set-level! :debug)
+;; Systemd journal priority levels (RFC 5424)
+(def ^:private log-level->syslog
+  {:trace  7 ; debug
+   :debug  7 ; debug
+   :info   6 ; info
+   :warn   4 ; warning
+   :error  3 ; err
+   :fatal  2 ; crit
+   :report 6}) ; info
 
-(timbre/info "info")
-(timbre/debug "info")
+;; Detect if running under systemd
+(def ^:private systemd? (some? (System/getenv "JOURNAL_STREAM")))
+
+(defn- systemd-output-fn
+  "Output function for systemd journal - omits timestamp (journald adds it)
+   and prefixes with syslog priority level."
+  [{:keys [level ?ns-str ?line msg_ ?err]}]
+  (let [priority (get log-level->syslog level 6)
+        ns-str   (or ?ns-str "?")
+        line     (or ?line "?")
+        msg      (force msg_)
+        err-str  (when ?err
+                   (let [sw (java.io.StringWriter.)
+                         pw (java.io.PrintWriter. sw)]
+                     (.printStackTrace ^Throwable ?err pw)
+                     (str "\n" (.toString sw))))]
+    (str "<" priority ">" (str/upper-case (name level)) " [" ns-str ":" line "] - " msg err-str)))
+
+;; Configure Timbre with systemd-aware output
+(when systemd?
+  (timbre/merge-config! {:output-fn systemd-output-fn}))
+
+(timbre/set-level! :debug)
 ; (deps/add-deps '{:deps {djblue/portal {:mvn/version "0.23.0"}}})
 
 ; (require '[portal.api :as p])
@@ -96,21 +125,22 @@
 
     (timbre/warn "RUNNING")
     (while true
-      (let [msg (async/<!! send-chan)]
+      (try (let [msg (async/<!! send-chan)]
 
-        ; (let [{:keys [::esp/state ::esp/ident]} msg])
-        ; (when ident
-        ; (update-or-add state* ident state)
-        (timbre/debug (prn-str msg))
-        ; (prn msg)
+             ; (let [{:keys [::esp/state ::esp/ident]} msg])
+             ; (when ident
+             ; (update-or-add state* ident state)
+             (timbre/debug (prn-str msg))
+             ; (prn msg)
 
-        (cond
-          (map? msg)
-          (try-fn send-chan state* msg)
+             (cond
+               (map? msg)
+               (try-fn send-chan state* msg)
 
-          (sequential? msg)
-          (doseq [m msg]
-            (try-fn send-chan state* m))
+               (sequential? msg)
+               (doseq [m msg]
+                 (try-fn send-chan state* m))
 
-          :else
-          (timbre/error msg))))))
+               :else
+               (timbre/error msg)))
+           (catch Exception e (timbre/error e "Error processing message"))))))

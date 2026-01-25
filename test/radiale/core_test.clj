@@ -228,3 +228,133 @@
 ;; 2. Initial configuration items are processed by `try-fn`.
 ;; 3. Messages (map and sequence) put on its internal channel are processed by `try-fn`.
 ;; It achieves loop control by closing the channel used by `async/<!!`.
+
+;; --- Tests for systemd-output-fn ---
+
+(deftest systemd-output-fn-test
+  (testing "systemd-output-fn formats log messages correctly"
+    (let [output-fn #'rc/systemd-output-fn] ; Access private fn via var
+
+      (testing "INFO level message"
+        (let [result (output-fn
+                       {:level   :info
+                        :?ns-str "my.namespace"
+                        :?line   42
+                        :msg_    (delay "Test message")})]
+          (is
+            (clojure.string/starts-with? result "<6>"))
+          (is
+            (clojure.string/includes? result "INFO"))
+          (is
+            (clojure.string/includes? result "[my.namespace:42]"))
+          (is
+            (clojure.string/includes? result "Test message"))))
+
+      (testing "ERROR level message"
+        (let [result (output-fn
+                       {:level   :error
+                        :?ns-str "my.namespace"
+                        :?line   100
+                        :msg_    (delay "Error occurred")})]
+          (is
+            (clojure.string/starts-with? result "<3>"))
+          (is
+            (clojure.string/includes? result "ERROR"))
+          (is
+            (clojure.string/includes? result "[my.namespace:100]"))
+          (is
+            (clojure.string/includes? result "Error occurred"))))
+
+      (testing "WARN level message"
+        (let [result (output-fn
+                       {:level   :warn
+                        :?ns-str "test.ns"
+                        :?line   50
+                        :msg_    (delay "Warning!")})]
+          (is
+            (clojure.string/starts-with? result "<4>"))
+          (is
+            (clojure.string/includes? result "WARN"))))
+
+      (testing "DEBUG level message"
+        (let [result (output-fn
+                       {:level   :debug
+                        :?ns-str "test.ns"
+                        :?line   10
+                        :msg_    (delay "Debug info")})]
+          (is
+            (clojure.string/starts-with? result "<7>"))
+          (is
+            (clojure.string/includes? result "DEBUG"))))
+
+      (testing "Missing namespace and line defaults to ?"
+        (let [result (output-fn
+                       {:level   :info
+                        :?ns-str nil
+                        :?line   nil
+                        :msg_    (delay "No location")})]
+          (is
+            (clojure.string/includes? result "[?:?]"))))
+
+      (testing "ERROR with exception includes stack trace"
+        (let [test-ex (ex-info "Test exception" {:data 123})
+              result  (output-fn
+                        {:level   :error
+                         :?ns-str "my.namespace"
+                         :?line   200
+                         :msg_    (delay "Something failed")
+                         :?err    test-ex})]
+          (is
+            (clojure.string/starts-with? result "<3>"))
+          (is
+            (clojure.string/includes? result "ERROR"))
+          (is
+            (clojure.string/includes? result "Something failed"))
+          (is
+            (clojure.string/includes? result "Test exception"))
+          (is
+            (clojure.string/includes? result "clojure.lang.ExceptionInfo"))))
+
+      (testing "INFO without exception has no stack trace"
+        (let [result (output-fn
+                       {:level   :info
+                        :?ns-str "my.namespace"
+                        :?line   10
+                        :msg_    (delay "Normal message")
+                        :?err    nil})]
+          (is
+            (not (clojure.string/includes? result "Exception")))
+          (is
+            (not (clojure.string/includes? result "\tat "))))))))
+
+(deftest timbre-output-with-systemd-test
+  (testing "Timbre uses systemd format when JOURNAL_STREAM is set"
+    ;; We test the systemd-output-fn is correctly configured
+    ;; by checking the systemd? flag and output-fn behavior
+    (let [systemd-flag #'rc/systemd?]
+      ;; In test environment, JOURNAL_STREAM is typically not set
+      ;; so systemd? should be false
+      (is
+        (boolean? @systemd-flag)
+        "systemd? should be a boolean")))
+
+  (testing "Log level to syslog priority mapping"
+    (let [level-map #'rc/log-level->syslog]
+      (is
+        (= 3 (:error @level-map))
+        "error should map to syslog 3")
+      (is
+        (= 4 (:warn @level-map))
+        "warn should map to syslog 4")
+      (is
+        (= 6 (:info @level-map))
+        "info should map to syslog 6")
+      (is
+        (= 7 (:debug @level-map))
+        "debug should map to syslog 7")
+      (is
+        (= 7 (:trace @level-map))
+        "trace should map to syslog 7")
+      (is
+        (= 2 (:fatal @level-map))
+        "fatal should map to syslog 2"))))

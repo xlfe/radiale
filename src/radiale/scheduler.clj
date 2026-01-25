@@ -3,7 +3,8 @@
    Provides similar functionality to overtone/at-at but using only
    core.async primitives (go blocks and timeout channels)."
   (:require
-    [clojure.core.async :as async :refer [<! >! chan close! go go-loop timeout]]))
+    [clojure.core.async :as async :refer [<! >! chan close! go go-loop timeout]]
+    [taoensso.timbre :as timbre]))
 
 (defn mk-pool
   "Create a scheduler pool. In this implementation, the pool is just
@@ -37,7 +38,7 @@
       (let [[_ ch] (async/alts! [(timeout ms) cancel-ch])]
         (when (not= ch cancel-ch)
           ;; Timeout fired, not cancelled
-          (try (f) (catch Exception e (println "Scheduler error in job" id ":" (.getMessage e)))))
+          (try (f) (catch Exception e (timbre/error e "Scheduler error in job" id))))
         ;; Clean up
         (swap! pool update :jobs dissoc id)))
 
@@ -67,7 +68,7 @@
       (let [[_ ch] (async/alts! [(timeout ms) cancel-ch])]
         (when (not= ch cancel-ch)
           ;; Timeout fired, not cancelled
-          (try (f) (catch Exception e (println "Scheduler error in job" id ":" (.getMessage e))))
+          (try (f) (catch Exception e (timbre/error e "Scheduler error in job" id)))
           (recur))))
     ;; When loop exits (cancelled), clean up
     (go (<! cancel-ch) (swap! pool update :jobs dissoc id))
