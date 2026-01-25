@@ -10,7 +10,7 @@ setuptools.setup(
     keywords=["home-automation"],
     install_requires=[
         "dmcast @ git+https://github.com/xlfe/dmcast.git@main",
-        "protobuf<4.0,>=3.12.2",
+        "protobuf>=5.0.0",
         "aioesphomeapi",
         "websockets",
         "aiohttp",
