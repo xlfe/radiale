@@ -3,8 +3,8 @@ import json
 import sys
 import traceback
 
+from bcoding import bencode, bdecode
 from boltons.iterutils import remap
-from fastbencode import bdecode, bencode
 
 from . import chromecast, deconz, esphome, mdns, mqtt, schedule
 
@@ -114,6 +114,8 @@ class RadialePod(object):
             msg = await asyncio.get_event_loop().run_in_executor(
                 None, bdecode, sys.stdin.buffer
             )
+
+            # await eprint(f"--- RUN_POD: GOT MSG: {msg} ---")
 
             op = msg["op"]
 

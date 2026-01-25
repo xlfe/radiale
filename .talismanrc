@@ -1,4 +1,4 @@
-threshold: medium
+threshold: high
 allowed_patterns:
 - https://files.pythonhosted.org/.*
 - sha256.*

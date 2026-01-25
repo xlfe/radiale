@@ -1,14 +1,14 @@
 (ns radiale.influx
-  (:require 
+  (:require
 
-    [radiale.watch :as watch]
+    [babashka.pods :as pods]
+    [clojure.core.async :as async]
+    [clojure.core.async :as a]
+    [clojure.test :refer [function?]]
     [radiale.esp :as esp]
     [radiale.state :as state]
-    [clojure.core.async :as async]
-    [taoensso.timbre :as timbre]
-    [clojure.test :refer [function?]]
-    [clojure.core.async :as a]
-    [babashka.pods :as pods]))
+    [radiale.watch :as watch]
+    [taoensso.timbre :as timbre]))
     ; [babashka.deps :as deps]))
     ; [radiale.schedule :as schedule]
     ; [radiale.deconz]))
@@ -23,4 +23,4 @@
 
 
 
-                              
+

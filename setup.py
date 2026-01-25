@@ -15,7 +15,7 @@ setuptools.setup(
         "websockets",
         "aiohttp",
         "zeroconf",
-        "fastbencode",
+        "bcoding",
         "aiomqtt",
         "boltons",
         "celery",
