@@ -32,12 +32,25 @@ def location_data():
 
 @patch("sys.stderr.buffer.write")
 @patch("sys.stderr.buffer.flush")
+@patch("radiale.logging._SYSTEMD_JOURNAL", False)
 def test_eprint(mock_flush, mock_write):
     sample_string = "Error message"
     eprint(sample_string)
     mock_write.assert_called_once_with(
         sample_string.encode("utf-8") + "\n".encode("utf-8")
     )
+    mock_flush.assert_called_once()
+
+
+@patch("sys.stderr.buffer.write")
+@patch("sys.stderr.buffer.flush")
+@patch("radiale.logging._SYSTEMD_JOURNAL", True)
+def test_eprint_with_systemd(mock_flush, mock_write):
+    """Test that eprint adds systemd priority prefix when running under systemd."""
+    sample_string = "Error message"
+    eprint(sample_string)
+    # Default level is LOG_INFO (6)
+    mock_write.assert_called_once_with(b"<6>Error message\n")
     mock_flush.assert_called_once()
 
 
