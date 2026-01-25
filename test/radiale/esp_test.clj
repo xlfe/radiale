@@ -94,8 +94,13 @@
         base-m
         {:service-name       "test-esp1"
          :ha-state-subscribe ["sensor.temp" "value"]})
-      (is
-        (contains? (get-in @state* [:radiale.subscription "sensor.temp" "value"]) :radiale.esp/test-esp1))) ; Note: esp-logger uses / for ns in keyword
+      ;; The esp-logger stores (set [:radiale.esp service-name]) which is #{:radiale.esp :test-esp1}
+      ;; So we need to check that the set at that path contains both elements
+      (let [sub-set (get-in @state* [:radiale.subscription "sensor.temp" "value"])]
+        (is
+          (contains? sub-set :radiale.esp))
+        (is
+          (contains? sub-set :test-esp1))))
 
     (testing "Regular state update"
       (reset! state* {:radiale.esp {:test-esp {"111" :the_switch}}}) ; Pre-populate mapping
@@ -186,7 +191,9 @@
 
 ;; --- Unit tests for esp-base-data ---
 (deftest esp-base-data-test
-  (let [state* (atom {:radiale.esp {:mydevice {"light_entity_id" {:props {:key "actual_hw_key_123"}}}}})]
+  ;; esp-base-data looks up: [:radiale.esp (keyword namespace) (keyword name) :props :key]
+  ;; So the key needs to be a keyword, not a string
+  (let [state* (atom {:radiale.esp {:mydevice {:light_entity_id {:props {:key "actual_hw_key_123"}}}}})]
     (is
       (= {:service-name "mydevice"
           :key          "actual_hw_key_123"}
@@ -208,9 +215,7 @@
                                radiale-map-subset {pod-fn-kw mock-pod-fn}
                                message-payload    (merge original-message cmd-specific-payload)]
                            (with-redefs [esp/esp-base-data (fn [_s _i]
-                                                             mock-esp-base-data-val)
-                                         async/>!!         (fn [ch msg]
-                                                             (>!! ch msg))]
+                                                             mock-esp-base-data-val)]
                              (command-fn radiale-map-subset bus state* message-payload))
 
                            (is
@@ -254,9 +259,7 @@
                      ::esp/entity-id "ha.entity"
                      ::esp/attribute "attr"
                      ::esp/state     "val"}]
-        (with-redefs [async/>!! (fn [ch msg]
-                                  (>!! ch msg))]
-          (esp/state radiale-map-subset bus state* message))
+        (esp/state radiale-map-subset bus state* message)
         (is
           (= 1 (count @mock-pod-fn-calls)))
         (is

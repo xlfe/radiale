@@ -11,7 +11,8 @@
                                                          :git/tag "v0.8.0"}}
           :ns-default build}
   :test
-  {:extra-paths ["test"]
+  {:extra-deps {org.clojure/data.json {:mvn/version "2.4.0"}}
+   :extra-paths ["test"]
    :main-opts
    ["-m" "clojure.main" "-e"
     "(require 'clojure.java.io) (doseq [f (->> (file-seq (clojure.java.io/file \"test\")) (filter #(clojure.string/ends-with? (.getName %) \"_test.clj\")))] (load-file (.getAbsolutePath f))) (let [results (clojure.test/run-all-tests #\"radiale.*-test\")] (println (str \"Tests failed: \" (:fail results) \", Errors: \" (:error results))) (System/exit (if (and (zero? (:fail results)) (zero? (:error results))) 0 1)))"]}}}

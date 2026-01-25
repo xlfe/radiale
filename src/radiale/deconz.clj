@@ -7,7 +7,7 @@
 (defn store-deconz-config
   [service-type-namespaces state* result]
   (doseq [[t s] result]
-    (when-let [t (get service-type-namespaces t)]
+    (when-let [t (get service-type-namespaces (keyword t))]
       (doseq [[id
                {:keys [state]
                 :as   props}]
