@@ -60,19 +60,50 @@ def astral_next_events(lat, lon, tz, offset_seconds):
             }
 
 
-def schedule_to_millis(now, s):
-    re = s.remaining_estimate(now)
-    assert type(re) is timedelta
-    return s.remaining_estimate(now).total_seconds() * 1000
-
-
-def nowfun(tz):
-    return datetime.now(tz=pytz.timezone(tz))
-
-
 def ms_until_crontab(c):
-    tz = c.pop("tz")
-    return schedule_to_millis(nowfun(tz), crontab(**c))
+    """Calculate milliseconds until the next crontab match.
+    
+    Note: Celery's crontab.remaining_estimate is designed for Celery's beat 
+    scheduler and doesn't work correctly with timezone-aware datetimes outside
+    of Celery. We calculate the next run time manually instead.
+    """
+    tz_str = c.pop("tz")
+    tz = pytz.timezone(tz_str)
+    now = datetime.now(tz=tz)
+    
+    hour = c.get("hour", "*")
+    minute = c.get("minute", "*")
+    day_of_week = c.get("day_of_week", "*")
+    
+    # Parse hour and minute (assuming single values for now, not ranges)
+    target_hour = int(hour) if hour != "*" else now.hour
+    target_minute = int(minute) if minute != "*" else now.minute
+    
+    # Parse day_of_week - can be "*", "0-4", "5,6", etc.
+    # Python weekday: 0=Monday, 6=Sunday
+    if day_of_week == "*":
+        valid_days = set(range(7))
+    else:
+        valid_days = set()
+        for part in str(day_of_week).split(","):
+            if "-" in part:
+                start, end = part.split("-")
+                valid_days.update(range(int(start), int(end) + 1))
+            else:
+                valid_days.add(int(part))
+    
+    # Find the next valid datetime
+    candidate = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+    
+    # Check up to 8 days ahead (covers all weekday combinations)
+    for days_ahead in range(8):
+        check_date = candidate + timedelta(days=days_ahead)
+        if check_date.weekday() in valid_days and check_date > now:
+            delta = check_date - now
+            return delta.total_seconds() * 1000
+    
+    # Fallback - shouldn't happen with valid day_of_week
+    raise ValueError(f"Could not find next run time for crontab: {c}")
 
 
 def ms_until_solar(s):

@@ -233,8 +233,8 @@ async def test_esphome_light_command(esphome_instance, mock_out_q):
 
 @pytest.mark.asyncio
 async def test_esphome_service_command(esphome_instance, mock_out_q):
-    esphome_instance.cli = AsyncMock()
-    esphome_instance.cli.execute_service = AsyncMock()
+    esphome_instance.cli = MagicMock()  # execute_service is synchronous now
+    esphome_instance.cli.execute_service = MagicMock()
 
     # Pre-populate service_details as update_services would
     mock_service_data = {'key': 789, 'name': 'test_svc', 'args': []} # Simplified
@@ -252,7 +252,8 @@ async def test_esphome_service_command(esphome_instance, mock_out_q):
         # Construct the expected dict passed to UserService constructor
         expected_svc_constructor_args = mock_service_data.copy()
         MockUserServiceCls.assert_called_once_with(**expected_svc_constructor_args)
-        esphome_instance.cli.execute_service.assert_awaited_once_with(mock_user_service_obj, params_for_svc)
+        # execute_service is synchronous in newer aioesphomeapi
+        esphome_instance.cli.execute_service.assert_called_once_with(mock_user_service_obj, params_for_svc)
         mock_out_q.write_msg.assert_called_once_with(id="cmd_svc_1", data={"success": True})
 
 @pytest.mark.asyncio
