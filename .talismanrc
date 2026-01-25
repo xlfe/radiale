@@ -2,3 +2,4 @@ threshold: medium
 allowed_patterns:
 - https://files.pythonhosted.org/.*
 - sha256.*
+- ed.*

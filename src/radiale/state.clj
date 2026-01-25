@@ -1,7 +1,7 @@
 (ns radiale.state
-  (:require 
-    [clojure.data]
+  (:require
     [clojure.core.async :as async]
+    [clojure.data]
     [taoensso.timbre :as timbre]))
 
 
@@ -12,39 +12,31 @@
 
 (defn unpack
   [p m max-depth]
-  (if (and 
+  (if (and
         (>= max-depth (count p))
         (map? m))
-   (mapcat
-     (fn [[k v]]
-       (unpack (conj p k) v max-depth))
-     m)
-   [[p m]]))
-                                                                                                           
+    (mapcat (fn [[k v]]
+              (unpack (conj p k) v max-depth))
+      m)
+    [[p m]]))
+
 
 (defn watch-state
   [send-chan state*]
-  (add-watch state* ::watcher
+  (add-watch
+    state*
+    ::watcher
     (fn [_ _ old-state new-state]
       (let [[prev now _] (clojure.data/diff old-state new-state)]
         (when now
           (doseq [[[domain device property :as path] nv] (unpack [] now 2)]
-            ; (println domain device property) 
-            ; (println "\t\t" (get-in prev path) "->" nv)                                                                      
-            (async/>!! 
+            ; (println domain device property)
+            ; (println "\t\t" (get-in prev path) "->" nv)
+            (async/>!!
               send-chan
               {::domain domain
-               ::ident device
-               ::prop property
-               ::prev (get-in prev path) 
-               ::now nv})))))))                                                                      
+               ::ident  device
+               ::prop   property
+               ::prev   (get-in prev path)
+               ::now    nv})))))))
         ; (async/>!! send-chan {::old m}))))) 
-
-
-
-
-
-
-
-
-

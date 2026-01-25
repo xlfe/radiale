@@ -1,6 +1,13 @@
 import json
+import asyncio
 import websockets
+from websockets.exceptions import ConnectionClosed
 import aiohttp
+import sys
+
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
 
 
 def make_host(opts):
@@ -9,7 +16,7 @@ def make_host(opts):
 
 class Deconz:
     def __init__(self):
-        self.uri = self.ws = None
+        self.uri = None
 
     async def put(self, out, id, opts, type_name, device_id, state):
 
@@ -33,15 +40,13 @@ class Deconz:
                         config_data['config']['websocketport'])
 
         if self.uri:
-            self.ws = await websockets.connect(self.uri)
-
-            try:
-                while True:
-                    if not self.ws.open:
-                        self.ws = await websockets.connect(self.uri)
-                    else:
-                        data = await self.ws.recv()
-                        out.write_msg(id=id, data=json.loads(data))
-
-            except websockets.exceptions.ConnectionClosedOK:
-                pass
+            # Use websockets' built-in reconnection pattern (new in v10+)
+            # This handles transient disconnects with exponential backoff
+            async for ws in websockets.connect(self.uri):
+                try:
+                    eprint(f"Deconz: Connected to {self.uri}")
+                    async for message in ws:
+                        out.write_msg(id=id, data=json.loads(message))
+                except ConnectionClosed:
+                    eprint("Deconz: Connection closed, reconnecting...")
+                    continue

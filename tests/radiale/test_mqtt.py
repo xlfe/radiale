@@ -18,11 +18,6 @@ async def test_mqtt_listen_basic_flow(mock_out_queue):
     host = "test-broker.local"
     opts = {'host': host}
 
-    mock_client_instance = AsyncMock()
-
-    # Mock the async context manager for unfiltered_messages
-    mock_messages_ctx_mgr = AsyncMock()
-
     # Simulate some messages
     mock_message1 = MagicMock()
     mock_message1.topic = "test/topic/1"
@@ -32,14 +27,14 @@ async def test_mqtt_listen_basic_flow(mock_out_queue):
     mock_message2.topic = "another/topic"
     mock_message2.payload = b"payload2"
 
-    # Make unfiltered_messages yield these messages
-    # The async_for_magic_mock allows iterating over a list of items.
-    # We need an async iterator, so we'll mock __aiter__ to return an object
-    # whose __anext__ will yield messages and then raise StopAsyncIteration.
+    # Create async iterator for messages
     class AsyncIterator:
         def __init__(self, items):
             self.items = items
             self.iter = iter(self.items)
+
+        def __aiter__(self):
+            return self
 
         async def __anext__(self):
             try:
@@ -47,26 +42,23 @@ async def test_mqtt_listen_basic_flow(mock_out_queue):
             except StopIteration:
                 raise StopAsyncIteration
 
-    mock_messages_ctx_mgr.__aenter__.return_value = AsyncIterator([mock_message1, mock_message2])
-    mock_client_instance.unfiltered_messages.return_value = mock_messages_ctx_mgr
+    # Mock the unfiltered_messages context manager
+    mock_messages_ctx_mgr = MagicMock()
+    mock_messages_ctx_mgr.__aenter__ = AsyncMock(return_value=AsyncIterator([mock_message1, mock_message2]))
+    mock_messages_ctx_mgr.__aexit__ = AsyncMock(return_value=None)
 
-    # Mock connect and subscribe methods
-    mock_client_instance.connect = AsyncMock() # For 'async with client:'
+    # Mock the client
+    mock_client_instance = MagicMock()
+    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+    mock_client_instance.__aexit__ = AsyncMock(return_value=None)
+    mock_client_instance.unfiltered_messages.return_value = mock_messages_ctx_mgr
     mock_client_instance.subscribe = AsyncMock()
 
     with patch('radiale.mqtt.Client', return_value=mock_client_instance) as MockClientCls:
         await mqtt_listen(mock_out_queue, "mqtt_id_1", opts)
 
         MockClientCls.assert_called_once_with(host)
-        # `async with client:` implies connect and disconnect (or equivalent __aenter__/__aexit__)
-        # Depending on asyncio_mqtt's Client implementation, connect might be part of __aenter__
-        # For this test, let's assume connect is implicitly handled by `async with`
-        # or explicitly if the library requires `await client.connect()` inside.
-        # The code shows `async with client:`, which means __aenter__ is key.
-        # We'll assert it was entered.
         mock_client_instance.__aenter__.assert_awaited_once()
-
-
         mock_client_instance.subscribe.assert_awaited_once_with("#")
 
         assert mock_out_queue.write_msg.call_count == 2
@@ -94,15 +86,26 @@ async def test_mqtt_listen_with_username_password(mock_out_queue):
     password = "testpassword"
     opts = {'host': host, 'username': username, 'password': password}
 
-    mock_client_instance = AsyncMock()
-    # Mock the internal _client object for username_pw_set
+    # Create empty async iterator for messages
+    class EmptyAsyncIterator:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+    # Mock the unfiltered_messages context manager
+    mock_messages_ctx_mgr = MagicMock()
+    mock_messages_ctx_mgr.__aenter__ = AsyncMock(return_value=EmptyAsyncIterator())
+    mock_messages_ctx_mgr.__aexit__ = AsyncMock(return_value=None)
+
+    # Mock the client
+    mock_client_instance = MagicMock()
+    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+    mock_client_instance.__aexit__ = AsyncMock(return_value=None)
     mock_client_instance._client = MagicMock()
-
-    # Setup context manager and iterator to be empty for this test
-    mock_messages_ctx_mgr = AsyncMock()
-    mock_messages_ctx_mgr.__aenter__.return_value = AsyncIterator([]) # No messages
     mock_client_instance.unfiltered_messages.return_value = mock_messages_ctx_mgr
-
+    mock_client_instance.subscribe = AsyncMock()
 
     with patch('radiale.mqtt.Client', return_value=mock_client_instance) as MockClientCls:
         await mqtt_listen(mock_out_queue, "mqtt_id_2", opts)
