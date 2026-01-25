@@ -108,7 +108,7 @@ async def test_esphome_on_disconnect_successful_reconnect(esphome_instance):
     esphome_instance.retries = 0 # Ensure starting retries is 0
 
     with patch('asyncio.sleep', AsyncMock()) as mock_sleep, \
-         patch('radiale.pod.eprint') as mock_eprint: # Mock eprint if it's noisy
+         patch('radiale.esphome.eprint') as mock_eprint: # Mock eprint from logging module
 
         await esphome_instance.on_disconnect()
 
@@ -129,7 +129,7 @@ async def test_esphome_on_disconnect_fails_all_retries(esphome_instance):
     esphome_instance.retries = 0
 
     with patch('asyncio.sleep', AsyncMock()) as mock_sleep, \
-         patch('radiale.pod.eprint') as mock_eprint:
+         patch('radiale.esphome.eprint') as mock_eprint: # Mock eprint from logging module
 
         await esphome_instance.on_disconnect()
 

@@ -1,6 +1,7 @@
 import dmcast
 import asyncio
-from . import pod
+
+from .logging import eprint
 
 SERVICE_TYPE = "_googlecast._tcp.local."
 
@@ -16,7 +17,7 @@ class Chromecast():
 
     async def connect(self):
 
-        pod.eprint(f'Chromecast connecting {self.service_name}')
+        eprint(f'Chromecast connecting {self.service_name}')
         info = await self.mdns.get_info(
                 SERVICE_TYPE, f'{self.service_name}')
 

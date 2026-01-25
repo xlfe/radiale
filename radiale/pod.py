@@ -7,11 +7,7 @@ from bcoding import bencode, bdecode
 from boltons.iterutils import remap
 
 from . import chromecast, deconz, esphome, mdns, mqtt, schedule
-
-
-def eprint(e):
-    sys.stderr.buffer.write(e.encode("utf-8") + "\n".encode("utf-8"))
-    sys.stderr.buffer.flush()
+from .logging import eprint, LOG_ERR
 
 
 def make_clj_code(fn_name):
@@ -147,7 +143,7 @@ class RadialePod(object):
                 try:
                     await self.invoke(msg)
                 except Exception:
-                    eprint(traceback.format_exc())
+                    eprint(traceback.format_exc(), level=LOG_ERR)
                     ex_type, ex_value, ex_traceback = sys.exc_info()
                     self.out.write_msg(
                         id=msg["id"], status="error", data=repr(ex_value)

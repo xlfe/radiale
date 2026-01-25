@@ -3,11 +3,8 @@ import asyncio
 import websockets
 from websockets.exceptions import ConnectionClosed
 import aiohttp
-import sys
 
-
-def eprint(*args, **kwargs):
-    print(*args, file=sys.stderr, **kwargs)
+from .logging import eprint, LOG_WARNING
 
 
 def make_host(opts):
@@ -48,5 +45,5 @@ class Deconz:
                     async for message in ws:
                         out.write_msg(id=id, data=json.loads(message))
                 except ConnectionClosed:
-                    eprint("Deconz: Connection closed, reconnecting...")
+                    eprint("Deconz: Connection closed, reconnecting...", level=LOG_WARNING)
                     continue

@@ -2,8 +2,9 @@ import asyncio
 import aioesphomeapi
 from aioesphomeapi.core import APIConnectionError
 from aioesphomeapi.model import UserService
-from . import pod
 from typing import cast
+
+from .logging import eprint, LOG_ERR, LOG_WARNING, LOG_INFO
 
 
 SERVICE_TYPE = "_esphomelib._tcp.local."
@@ -30,7 +31,8 @@ class ESPHome():
         })
 
     async def on_disconnect(self, expected: bool = False):
-        pod.eprint(f'ESP Disconnected from {self.service_name} (expected={expected})')
+        eprint(f'ESP Disconnected from {self.service_name} (expected={expected})',
+               level=LOG_WARNING if not expected else LOG_INFO)
         await self.connected_state(False)
 
         if expected:
@@ -43,13 +45,13 @@ class ESPHome():
 
             await asyncio.sleep(5)
 
-            pod.eprint(f'ESP try {self.retries} reconnect {self.service_name}')
+            eprint(f'ESP try {self.retries} reconnect {self.service_name}')
             try:
                 await self.connect()
                 await self.connected_state(True)
                 await asyncio.create_task(self.subscribe())
                 self.retries = 0
-                pod.eprint(f'ESP: Reconnected to {self.service_name}')
+                eprint(f'ESP: Reconnected to {self.service_name}')
                 break
             except APIConnectionError:
                 self.retries += 1
@@ -60,16 +62,16 @@ class ESPHome():
 
     async def connect(self):
 
-        pod.eprint(f'ESP Connecting {self.service_name}')
+        eprint(f'ESP Connecting {self.service_name}')
         info = await self.mdns.get_info(SERVICE_TYPE, self.service_name)
 
         if info is None:
-            pod.eprint(f'ESP: No mDNS info found for {self.service_name}')
+            eprint(f'ESP: No mDNS info found for {self.service_name}', level=LOG_ERR)
             raise APIConnectionError(f"No mDNS info for {self.service_name}")
 
         hosts = info.parsed_scoped_addresses()
         if not hosts:
-            pod.eprint(f'ESP: No hosts found for {self.service_name}')
+            eprint(f'ESP: No hosts found for {self.service_name}', level=LOG_ERR)
             raise APIConnectionError(f"No hosts for {self.service_name}")
 
         self.cli = aioesphomeapi.APIClient(hosts[0], info.port, None)
@@ -81,7 +83,7 @@ class ESPHome():
 
     async def subscribe(self):
         if self.cli is None:
-            pod.eprint(f'ESP: Cannot subscribe - not connected to {self.service_name}')
+            eprint(f'ESP: Cannot subscribe - not connected to {self.service_name}', level=LOG_ERR)
             return
 
         def esp_change_callback(state):
@@ -106,7 +108,7 @@ class ESPHome():
 
     async def update_services(self):
         if self.cli is None:
-            pod.eprint(f'ESP: Cannot update services - not connected to {self.service_name}')
+            eprint(f'ESP: Cannot update services - not connected to {self.service_name}', level=LOG_ERR)
             return
 
         sensors = await self.cli.list_entities_services()
