@@ -1,4 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -e
 
-cd /opt/radiale
-clojure -i config/setup.clj
+# Start radiale from the current directory or RADIALE_HOME
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${RADIALE_HOME:-$SCRIPT_DIR}"
+
+exec clojure -i config/setup.clj
