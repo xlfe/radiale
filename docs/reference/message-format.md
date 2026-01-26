@@ -117,15 +117,17 @@ When application state changes, watchers emit events with this structure:
 
 ## Schedule Messages
 
-### Cron Schedule
+### Crontab Schedule
 
 ```clojure
 {:fn radiale.schedule/crontab
  ::rc/desc "Hourly check"
- ::rc/crontab "0 * * * *"
+ ::rc/params {:hour "*" :minute 0 :day_of_week "*" :tz "Europe/London"}
  ::rc/at-most-once :hourly-check
  ::rc/then {:fn check-something}}
 ```
+
+Note: `day_of_week` uses Python weekday (0=Monday, 6=Sunday).
 
 ### Solar Schedule
 

@@ -12,6 +12,7 @@ You want to run radiale on a NixOS server with automatic startup, logging, and s
 - Nix flakes enabled
 - Your radiale configuration ready
 - Basic familiarity with NixOS configuration
+- Avahi/mDNS enabled (required for ESPHome and Chromecast discovery)
 
 ## Steps
 
@@ -61,7 +62,6 @@ let
       astral
       bcoding
       protobuf
-      celery  # for crontab parsing
     ];
     
     doCheck = false;
@@ -72,7 +72,28 @@ in {
 }
 ```
 
-### 3. Create a Systemd Service
+### 3. Enable Avahi for mDNS Discovery
+
+Radiale uses mDNS to discover ESPHome and Chromecast devices. Add to your NixOS configuration:
+
+```nix
+{
+  # Enable Avahi for mDNS
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;  # Enable .local resolution
+    publish = {
+      enable = true;
+      addresses = true;
+    };
+  };
+  
+  # Open mDNS port in firewall
+  networking.firewall.allowedUDPPorts = [ 5353 ];
+}
+```
+
+### 4. Create a Systemd Service
 
 Add to your NixOS configuration:
 
@@ -118,7 +139,7 @@ Add to your NixOS configuration:
 }
 ```
 
-### 4. Deploy Your Configuration
+### 5. Deploy Your Configuration
 
 Copy your radiale config to the server:
 
@@ -132,14 +153,14 @@ ssh user@server "sudo mv /tmp/setup.clj /var/lib/radiale/config/"
 ssh user@server "sudo chown -R radiale:radiale /var/lib/radiale"
 ```
 
-### 5. Apply NixOS Configuration
+### 6. Apply NixOS Configuration
 
 ```bash
 # From your dotfiles directory
 nixos-rebuild switch --flake .#your-host --target-host user@server
 ```
 
-### 6. Verify the Service
+### 7. Verify the Service
 
 ```bash
 # Check service status
@@ -198,6 +219,27 @@ The service runs with restricted permissions. You may need to:
 - Add the user to specific groups (e.g., `dialout` for serial)
 - Adjust `ReadWritePaths` for additional directories
 - Use `AmbientCapabilities` for network capabilities
+
+### Devices not discovered (mDNS issues)
+
+If ESPHome or Chromecast devices aren't being discovered:
+
+1. Verify Avahi is running:
+   ```bash
+   systemctl status avahi-daemon
+   ```
+
+2. Test mDNS resolution:
+   ```bash
+   avahi-browse -art | grep -E "esphome|googlecast"
+   ```
+
+3. Check firewall allows mDNS (UDP port 5353):
+   ```bash
+   sudo iptables -L -n | grep 5353
+   ```
+
+4. Ensure devices are on the same network/VLAN as the server
 
 ## See Also
 

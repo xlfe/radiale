@@ -13,25 +13,50 @@ You want to run automations at specific times, such as turning on lights at suns
 
 ## Steps
 
-### 1. Schedule with Cron Expression
+### 1. Schedule with Crontab
 
-Run a task on a cron schedule:
+Run a task on a crontab schedule:
 
 ```clojure
 {:fn radiale.schedule/crontab
  ::rc/desc "Turn off lights at midnight"
- ::rc/crontab "0 0 * * *"           ; midnight daily
+ ::rc/params {:hour 0
+              :minute 0
+              :day_of_week "*"
+              :tz "Europe/London"}
  ::rc/at-most-once :midnight-lights-off
  ::rc/then {:fn radiale.deconz/put
             ::rc/ident :lights/all
             ::rc/state {:on false}}}
 ```
 
-Common cron patterns:
-- `0 * * * *` - Every hour
-- `*/15 * * * *` - Every 15 minutes
-- `0 8 * * 1-5` - 8 AM on weekdays
-- `0 0 * * *` - Midnight daily
+**Crontab format** (NOT standard cron syntax):
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `:hour` | int or `"*"` | Hour (0-23) |
+| `:minute` | int or `"*"` | Minute (0-59) |
+| `:day_of_week` | string | Day pattern (see below) |
+| `:tz` | string | Timezone (e.g., "Europe/London") |
+
+**Day of week** uses Python convention (0=Monday, 6=Sunday):
+- `"*"` - Every day
+- `"0-4"` - Monday to Friday (weekdays)
+- `"5,6"` - Saturday and Sunday (weekends)
+- `"0"` - Monday only
+- `"0,2,4"` - Monday, Wednesday, Friday
+
+Common patterns:
+```clojure
+;; Every day at midnight
+{:hour 0 :minute 0 :day_of_week "*" :tz "Europe/London"}
+
+;; Weekdays at 8 AM
+{:hour 8 :minute 0 :day_of_week "0-4" :tz "Europe/London"}
+
+;; Every hour on the hour
+{:hour "*" :minute 0 :day_of_week "*" :tz "Europe/London"}
+```
 
 ### 2. Schedule at Solar Events
 
@@ -120,7 +145,8 @@ Specifies what happens when the schedule triggers. Can be:
 
 ### Schedule not firing
 
-- Verify the cron expression is correct (use [crontab.guru](https://crontab.guru/))
+- Verify the crontab params are correct (see format above)
+- Remember: `day_of_week` uses Python convention (0=Monday), NOT standard cron (0=Sunday)
 - Check logs for scheduling errors
 - Ensure `::rc/at-most-once` ID is unique
 

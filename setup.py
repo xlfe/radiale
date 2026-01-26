@@ -18,7 +18,6 @@ setuptools.setup(
         "bcoding",
         "aiomqtt",
         "boltons",
-        "celery",
         "astral",
         "pytz",
     ],

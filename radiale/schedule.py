@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-from celery.schedules import crontab
 import pytz
 
 from astral.sun import sun

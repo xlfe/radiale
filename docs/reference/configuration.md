@@ -160,15 +160,20 @@ Connect to an MQTT broker.
 
 Time-based task execution.
 
-### Cron Schedule
+### Crontab Schedule
 
 ```clojure
 {:fn radiale.schedule/crontab
  ::rc/desc "Description"
- ::rc/crontab "0 * * * *"        ; Required: cron expression
+ ::rc/params {:hour 8             ; 0-23 or "*"
+              :minute 0           ; 0-59 or "*"
+              :day_of_week "0-4"  ; Python weekday: 0=Mon, 6=Sun
+              :tz "Europe/London"}
  ::rc/at-most-once :unique-id    ; Recommended: prevent duplicates
  ::rc/then {...}}                ; Required: action to execute
 ```
+
+**Note**: Day of week uses Python convention (0=Monday, 6=Sunday), NOT standard cron (0=Sunday).
 
 ### Solar Schedule
 

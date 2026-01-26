@@ -89,17 +89,26 @@ Time-based scheduling functions.
 
 ```clojure
 {:fn radiale.schedule/crontab
- ::rc/crontab "0 * * * *"
+ ::rc/params {:hour 8 :minute 0 :day_of_week "0-4" :tz "Europe/London"}
  ::rc/then {...}}
 ```
 
-Schedules an action using a cron expression.
+Schedules an action using a crontab configuration.
 
 | Key | Required | Description |
 |-----|----------|-------------|
-| `::rc/crontab` | Yes | Cron expression string |
+| `::rc/params` | Yes | Crontab config map (see below) |
 | `::rc/then` | Yes | Action to execute |
 | `::rc/at-most-once` | Recommended | Unique schedule ID |
+
+**Crontab params**:
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `:hour` | int/string | Hour 0-23 or `"*"` |
+| `:minute` | int/string | Minute 0-59 or `"*"` |
+| `:day_of_week` | string | `"*"`, `"0-4"`, `"5,6"` (0=Monday, 6=Sunday) |
+| `:tz` | string | Timezone (e.g., `"Europe/London"`) |
 
 ### `solar`
 
