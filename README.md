@@ -1,4 +1,14 @@
+<p align="center">
+  <img src="logo.png" alt="Radiale Logo" width="300">
+</p>
+
 # Radiale
+
+*What if home-automation was also homoiconic?*
+
+> The upper or proximal row contains three bones, to which Gegenbaur has applied the terms radiale, intermedium, and ulnare, the first being on the radial or preaxial side of the limb.
+
+---
 
 Radiale is a home automation system combining Clojure for orchestration and Python for device integrations, connected via Babashka pods.
 
