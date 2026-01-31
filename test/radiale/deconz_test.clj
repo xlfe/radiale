@@ -42,11 +42,11 @@
               :uniqueid "uid-l1"
               :service  "lights" ; API type (plural) for Deconz REST API
               :id       "1"}
-             (get-in @state* [ident :props])))
+             (get-in @state* [:radiale.deconz ident :props])))
         (is
-          (= {:on false} (get-in @state* [ident :state])))
+          (= {:on false} (get-in @state* [:radiale.deconz ident :state])))
         (is
-          (= ident (get-in @state* ["uid-l1"])))))
+          (= ident (get-in @state* [:radiale.deconz :by-uniqueid "uid-l1"])))))
 
     (testing "Light 2 config"
       (let [ident (keyword "radiale.light" "Light 2")]
@@ -55,11 +55,11 @@
               :uniqueid "uid-l2"
               :service  "lights" ; API type (plural) for Deconz REST API
               :id       "2"}
-             (get-in @state* [ident :props])))
+             (get-in @state* [:radiale.deconz ident :props])))
         (is
-          (= {:on true} (get-in @state* [ident :state])))
+          (= {:on true} (get-in @state* [:radiale.deconz ident :state])))
         (is
-          (= ident (get-in @state* ["uid-l2"])))))
+          (= ident (get-in @state* [:radiale.deconz :by-uniqueid "uid-l2"])))))
 
     (testing "Sensor 10 config"
       (let [ident (keyword "radiale.sensor" "Sensor 1")]
@@ -68,20 +68,20 @@
               :uniqueid "uid-s10"
               :service  "sensors" ; API type (plural) for Deconz REST API
               :id       "10"}
-             (get-in @state* [ident :props])))
+             (get-in @state* [:radiale.deconz ident :props])))
         (is
-          (= {:open true} (get-in @state* [ident :state])))
+          (= {:open true} (get-in @state* [:radiale.deconz ident :state])))
         (is
-          (= ident (get-in @state* ["uid-s10"])))))))
+          (= ident (get-in @state* [:radiale.deconz :by-uniqueid "uid-s10"])))))))
 
 ;; --- Unit tests for state-change ---
 (deftest state-change-test
   (let [bus (chan 10)
         state* (atom
-                 {"uid-l1"              :radiale.light/Light1
-                  :radiale.light/Light1 {:props {:name     "Light1"
-                                                 :uniqueid "uid-l1"}
-                                         :state {:on false}}})
+                 {:radiale.deconz {:by-uniqueid          {"uid-l1" :radiale.light/Light1}
+                                   :radiale.light/Light1 {:props {:name     "Light1"
+                                                                  :uniqueid "uid-l1"}
+                                                          :state {:on false}}}})
         service-type-namespaces {:lights :radiale.light}
         original-message {:some "data"}]
 
@@ -96,7 +96,7 @@
         (is
           (= {:on  true
               :bri 200}
-             (get-in @state* [:radiale.light/Light1 :state])))
+             (get-in @state* [:radiale.deconz :radiale.light/Light1 :state])))
         (let [bus-msg (poll! bus)]
           (is
             (some? bus-msg))
@@ -118,7 +118,7 @@
           (= {:name      "Light1"
               :uniqueid  "uid-l1"
               :reachable true} ; Merged
-             (get-in @state* [:radiale.light/Light1 :props])))
+             (get-in @state* [:radiale.deconz :radiale.light/Light1 :props])))
         (is
           (nil? (poll! bus)))
         "No message should be sent for attr-only changes"))
@@ -215,8 +215,8 @@
 ;; --- Unit tests for get-config ---
 (deftest get-config-test
   (let [state* (atom
-                 {:my-light {:props {:id      "light-id-01"
-                                     :service "lights"}}})]
+                 {:radiale.deconz {:my-light {:props {:id      "light-id-01"
+                                                      :service "lights"}}}})]
     (is
       (= {:id   "light-id-01"
           :type "lights"}
@@ -244,7 +244,7 @@
 
       ;; Verify the light was stored
       (is
-        (some? (get @state* :light/bed1-left))
+        (some? (get-in @state* [:radiale.deconz :light/bed1-left]))
         "Light should be stored with namespace :light")
 
       ;; Step 2: Now try to PUT to this light (this happens when a schedule fires)

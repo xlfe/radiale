@@ -1,5 +1,6 @@
 (ns radiale.influx
   (:require
+    [clojure.core.async :as async]
     [clojure.string :as str]
     [radiale.state :as state]
     [radiale.watch :as watch]
@@ -9,6 +10,9 @@
 
 (defonce ^:private client* (atom nil))
 (defonce ^:private config* (atom nil))
+(defonce ^:private writer-chan* (atom nil))
+
+(def ^:private write-buffer-size 1024)
 
 (defn- finite-number?
   [value]
@@ -75,13 +79,42 @@
             value))
         values))))
 
+(defn- prop-keys
+  [prop]
+  (cond
+    (keyword? prop)
+    #{prop (keyword->string prop)}
+    (string? prop)
+    #{prop (keyword prop)}
+    :else
+    #{prop}))
+
 (defn- normalize-allow-props
   [allow-props]
-  (set
-    (map
-      (fn [prop]
-        (if (keyword? prop) prop (keyword prop)))
-      allow-props)))
+  (reduce
+    (fn [acc prop]
+      (into acc (prop-keys prop)))
+    #{}
+    (or allow-props [])))
+
+(defn- normalize-prop-aliases
+  [prop-aliases]
+  (reduce-kv
+    (fn [aliases prop alias]
+      (let [value (cond
+                    (keyword? alias)
+                    alias
+                    (string? alias)
+                    (keyword alias)
+                    :else
+                    alias)]
+        (reduce
+          (fn [acc key]
+            (assoc acc key value))
+          aliases
+          (prop-keys prop))))
+    {}
+    (or prop-aliases {})))
 
 (defn- ensure-client!
   [{:keys [::host ::token ::database]
@@ -91,7 +124,24 @@
       (throw (ex-info "InfluxDB3 config requires ::host, ::token, and ::database" opts)))
     (reset! config* opts)
     (reset! client* (InfluxDBClient/getInstance host (char-array token) database))
-    (timbre/info "InfluxDB3 client initialized")))
+    (timbre/info "InfluxDB3 client initialized"))
+  (when-not @writer-chan*
+    (let [ch (async/chan (async/buffer write-buffer-size))]
+      (reset! writer-chan* ch)
+      (async/thread
+        (loop []
+          (when-let [points (async/<!! ch)]
+            (try (let [start-ns (System/nanoTime)]
+                   (timbre/trace "InfluxDB3 write start" {:points (count points)})
+                   (doseq [point points]
+                     (.writePoint ^InfluxDBClient @client* point))
+                   (let [elapsed-ms (/ (- (System/nanoTime) start-ns) 1000000.0)]
+                     (timbre/trace
+                       "InfluxDB3 write done"
+                       {:points     (count points)
+                        :elapsed-ms elapsed-ms})))
+                 (catch Throwable t (timbre/warn t "InfluxDB3 write failed")))
+            (recur)))))))
 
 (defn- measurement-name
   [measurement]
@@ -137,6 +187,9 @@
         raw-now      (::state/now m)
         now          (extract-value raw-now)
         domains      (normalize-domains opts)
+        prop-aliases (normalize-prop-aliases (::prop-aliases opts))
+        measurement  (get prop-aliases prop prop)
+        scalar?      (or (not (map? raw-now)) (contains? raw-now :state))
         allow-props? (contains? opts ::allow-props)
         allow        (when allow-props?
                        (normalize-allow-props allow-props))
@@ -145,7 +198,9 @@
       (let [base-tags (normalize-tags
                         {:device ident
                          :domain domain})
-            tags      (merge base-tags (normalize-tags extra-tags))
+            prop-tags (when scalar?
+                        (normalize-tags {:prop prop}))
+            tags      (merge base-tags prop-tags (normalize-tags extra-tags))
             allow?    (fn [measurement]
                         (or (not allow-props?) (contains? allow measurement)))]
         (cond
@@ -153,9 +208,9 @@
             (map? raw-now)
             (contains? raw-now :state))
           (when (and
-                  (allow? prop)
+                  (allow? measurement)
                   (valid-field-value? now))
-            [(point-for-value prop tags now)])
+            [(point-for-value measurement tags now)])
 
           (map? raw-now)
           (when-let [point
@@ -170,19 +225,18 @@
                            raw-now)))]
             [point])
 
-          (allow? prop)
-          (when-let [point (point-for-value prop tags now)]
+          (allow? measurement)
+          (when-let [point (point-for-value measurement tags now)]
             [point]))))))
 
 (defn write-event
   [_radiale-map _bus _state*
    {:keys [::event]
     :as   _m}]
-  (when-let [client @client*]
-    (when-let [points (event->points @config* event)]
-      (try (doseq [point points]
-             (.writePoint client point))
-           (catch Exception e (timbre/warn e "InfluxDB3 write failed"))))))
+  (when-let [ch @writer-chan*]
+    (when-let [resolved (event->points @config* event)]
+      (when-not (async/offer! ch resolved)
+        (timbre/warn "InfluxDB3 write queue full; dropping points" {:points (count resolved)})))))
 
 (defn subscribe
   [_radiale-map bus state*
@@ -196,6 +250,23 @@
       state*
       {:id        watch-id
        ::watch/on (fn [_ m]
-                    (when (event->points opts m)
-                      {:radiale.core/fn write-event
-                       ::event          m}))})))
+                    (let [points      (event->points opts m)
+                          raw-now     (::state/now m)
+                          prop        (::state/prop m)
+                          measurement (get (normalize-prop-aliases (::prop-aliases opts)) prop prop)]
+                      (when (and
+                              (map? raw-now)
+                              (contains? raw-now :state)
+                              (nil? points))
+                        (timbre/trace
+                          "InfluxDB3 filtered event"
+                          {:domain      (::state/domain m)
+                           :prop        (::state/prop m)
+                           :measurement measurement
+                           :now         raw-now
+                           :domains     (normalize-domains opts)
+                           :allow-props (when (contains? opts ::allow-props)
+                                          (::allow-props opts))}))
+                      (when points
+                        {:radiale.core/fn write-event
+                         ::event          m})))})))

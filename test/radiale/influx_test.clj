@@ -18,7 +18,9 @@
     (is
       (= 1 (count lines)))
     (is
-      (line-contains? (first lines) [#"^temp," #"device=outside-garden" #"domain=radiale\.esp" #"value=22\.5"]))))
+      (line-contains?
+        (first lines)
+        [#"^temp," #"device=outside-garden" #"domain=radiale\.esp" #"prop=temp" #"value=22\.5"]))))
 
 (deftest deconz-event-to-point-test
   (let [opts  {::influx/domains [:radiale.deconz]}
@@ -54,6 +56,20 @@
       (nil? (re-find #"on=true" line)))
     (is
       (nil? (re-find #"reachable=false" line)))))
+
+(deftest prop-aliases-test
+  (let [opts  {::influx/domains      [:radiale.esp]
+               ::influx/allow-props  [:temp]
+               ::influx/prop-aliases {:powerbox-temp :temp}}
+        event {::state/domain :radiale.esp
+               ::state/ident  :powermon
+               ::state/prop   :powerbox-temp
+               ::state/now    {:state 28.0}}
+        lines (event->lines opts event)]
+    (is
+      (= 1 (count lines)))
+    (is
+      (line-contains? (first lines) [#"^temp," #"prop=powerbox-temp" #"device=powermon" #"value=28"]))))
 
 (deftest domain-filter-test
   (let [opts  {::influx/domains [:radiale.esp]}

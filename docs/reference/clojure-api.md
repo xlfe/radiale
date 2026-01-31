@@ -309,12 +309,18 @@ InfluxDB3 writer integration.
  ::influx/token "INFLUX_TOKEN"
  ::influx/database "radiale"
  ::influx/domains [:radiale.esp :radiale.deconz]
- ::influx/allow-props [:temp :humidity]}
+ ::influx/allow-props [:temp :humidity]
+ ::influx/prop-aliases {:powerbox-temp :temp}}
 ```
 
 Registers a watcher that writes ESPHome state changes to InfluxDB3. When
 `::influx/allow-props` is omitted, all scalar values with a `:state` field
 are written.
+
+`::influx/prop-aliases` can map ESPHome property names to alternate
+measurements. The original property name is always written as a `prop` tag
+for scalar ESPHome values, and aliasing lets multiple sensors share a
+measurement while remaining distinct by that tag.
 
 ### Measurement Mapping
 

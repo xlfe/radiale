@@ -17,13 +17,13 @@
           (timbre/debug "discovered service" ident)
           (timbre/debug props)
           (swap! state* assoc-in
-            [ident :props]
+            [:radiale.deconz ident :props]
             (merge
               (dissoc props :state)
               {:service api-type ; Store the API type (e.g., "lights") not the namespace
                :id      id}))
-          (swap! state* assoc-in [ident :state] state)
-          (swap! state* assoc-in [uid] ident))))))
+          (swap! state* assoc-in [:radiale.deconz ident :state] state)
+          (swap! state* assoc-in [:radiale.deconz :by-uniqueid uid] ident))))))
 
 (defn state-change
   [service-type-namespaces
@@ -33,14 +33,14 @@
              (some->> r
                       keyword
                       (get service-type-namespaces))]
-    (when-let [ident (get-in @state* [uniqueid])]
+    (when-let [ident (get-in @state* [:radiale.deconz :by-uniqueid uniqueid])]
       (if state
-        (do (swap! state* assoc-in [ident :state] state)
+        (do (swap! state* assoc-in [:radiale.deconz ident :state] state)
             (async/>!!
               bus
               {::ident ident
                ::state state}))
-        (swap! state* update-in [ident :props] merge attr)))))
+        (swap! state* update-in [:radiale.deconz ident :props] merge attr)))))
 
 
 (defn discover
@@ -58,7 +58,7 @@
 
 (defn get-config
   [state* ident]
-  (let [{:keys [:id :service]} (get-in @state* [ident :props])]
+  (let [{:keys [:id :service]} (get-in @state* [:radiale.deconz ident :props])]
     {:id   id
      :type service}))
 
@@ -78,6 +78,5 @@
 ; (put-deconz {:type "lights" :id "8" :state {:on false}} log)
 ; (put-deconz {:type "lights" :id "8" :state {:on true :bri 0 :transitiontime 0}} log)
 ; (put-deconz {:type "lights" :id "8" :state {:bri 255 :transitiontime 600}} log)))
-
 
 

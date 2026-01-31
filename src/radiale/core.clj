@@ -150,7 +150,12 @@
              ; (let [{:keys [::esp/state ::esp/ident]} msg])
              ; (when ident
              ; (update-or-add state* ident state)
-             (timbre/debug (prn-str msg))
+             (let [log-msg (prn-str msg)]
+               (if (and
+                     (map? msg)
+                     (contains? msg :radiale.influx/event))
+                 (timbre/trace log-msg)
+                 (timbre/debug log-msg)))
              ; (prn msg)
 
              (cond
