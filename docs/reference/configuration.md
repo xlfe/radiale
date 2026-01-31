@@ -156,6 +156,30 @@ Connect to an MQTT broker.
  :password "pass"}               ; Optional: authentication
 ```
 
+## InfluxDB3 Configuration
+
+Write state changes to InfluxDB3 using the Java client.
+
+```clojure
+{:fn radiale.influx/subscribe
+ ::influx/host "http://localhost:8181" ; Required
+ ::influx/token "INFLUX_TOKEN"         ; Required
+ ::influx/database "radiale"           ; Required
+ ;; Optional: domains to write (defaults to [:radiale.esp])
+ ::influx/domains [:radiale.esp :radiale.deconz]
+ ;; Optional: only write these properties (keywords from ::state/prop)
+ ::influx/allow-props [:temp :humidity]}
+```
+
+If `::influx/allow-props` is omitted, all scalar values with a `:state` field are written.
+
+### Measurement Mapping
+
+- ESPHome (`:radiale.esp`): measurement = property name, field = `value`.
+- deCONZ (`:radiale.deconz`): measurement = `:radiale.deconz`, fields = each state key (`bri`, `on`, `ct`, ...).
+
+All tags/measurement names are written as strings. Tags include `device` and `domain`.
+
 ## Scheduling Configuration
 
 Time-based task execution.

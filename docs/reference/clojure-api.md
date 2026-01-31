@@ -297,6 +297,30 @@ Chromecast device integration.
 
 Discovers Chromecast devices via mDNS and monitors their state.
 
+## radiale.influx
+
+InfluxDB3 writer integration.
+
+### `subscribe`
+
+```clojure
+{:fn radiale.influx/subscribe
+ ::influx/host "http://localhost:8181"
+ ::influx/token "INFLUX_TOKEN"
+ ::influx/database "radiale"
+ ::influx/domains [:radiale.esp :radiale.deconz]
+ ::influx/allow-props [:temp :humidity]}
+```
+
+Registers a watcher that writes ESPHome state changes to InfluxDB3. When
+`::influx/allow-props` is omitted, all scalar values with a `:state` field
+are written.
+
+### Measurement Mapping
+
+- ESPHome (`:radiale.esp`): measurement = property name, field = `value`.
+- deCONZ (`:radiale.deconz`): measurement = `:radiale.deconz`, fields = each state key.
+
 ## Pod Functions
 
 Functions exposed by the Python pod under `pod.xlfe.radiale`.
