@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import sys
 import traceback
 
@@ -59,11 +60,9 @@ def _write_(d):
 
 
 def clean_data(path, key, value):
-    return (
-        value is not float("nan")
-        and value is not float("inf")
-        and value is not float("-inf")
-    )
+    if isinstance(value, float):
+        return not (math.isnan(value) or math.isinf(value))
+    return True
 
 
 class OutgoingQ:

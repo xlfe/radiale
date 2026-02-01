@@ -110,12 +110,8 @@ def test_write():
 
 
 def test_clean_data():
-    # The clean_data function uses `is` comparison which only works correctly
-    # for the specific float instances, not general NaN/Inf values
-    # In practice, this may return True for NaN due to identity comparison
-    # Let's test the actual behavior
     import math
-    
+
     # Test with regular values - these should return True (keep them)
     assert clean_data("path", "key", 123) is True
     assert clean_data("path", "key", "string") is True
@@ -124,6 +120,16 @@ def test_clean_data():
     assert clean_data("path", "key", 0.0) is True
     assert clean_data("path", "key", []) is True
     assert clean_data("path", "key", {}) is True
+    assert clean_data("path", "key", 3.14159) is True
+
+    # Test with NaN and Inf - these should return False (filter them out)
+    assert clean_data("path", "key", float("nan")) is False
+    assert clean_data("path", "key", float("inf")) is False
+    assert clean_data("path", "key", float("-inf")) is False
+
+    # Verify that math.nan is also handled correctly
+    assert clean_data("path", "key", math.nan) is False
+    assert clean_data("path", "key", math.inf) is False
 
 
 # --- Tests for OutgoingQ ---

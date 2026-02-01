@@ -6,6 +6,7 @@
     [radiale.watch :as watch]
     [taoensso.timbre :as timbre])
   (:import [com.influxdb.v3.client InfluxDBClient Point]
+           [com.influxdb.v3.client.write WriteOptions]
            [java.time Instant]))
 
 (defonce ^:private client* (atom nil))
@@ -13,6 +14,21 @@
 (defonce ^:private writer-chan* (atom nil))
 
 (def ^:private write-buffer-size 1024)
+(def ^:private batch-interval-ms 100)
+
+(defn- write-batch!
+  [client points]
+  (when (seq points)
+    (let [start-ns   (System/nanoTime)
+          point-list (java.util.ArrayList. ^java.util.Collection points)
+          write-opts (WriteOptions. nil nil nil true)] ; noSync=true for faster writes
+      (timbre/trace "InfluxDB3 writing batch" {:points (count points)})
+      (.writePoints ^InfluxDBClient client point-list write-opts)
+      (let [elapsed-ms (/ (- (System/nanoTime) start-ns) 1000000.0)]
+        (timbre/trace
+          "InfluxDB3 batch complete"
+          {:points     (count points)
+           :elapsed-ms elapsed-ms})))))
 
 (defn- finite-number?
   [value]
@@ -129,19 +145,29 @@
     (let [ch (async/chan (async/buffer write-buffer-size))]
       (reset! writer-chan* ch)
       (async/thread
-        (loop []
-          (when-let [points (async/<!! ch)]
-            (try (let [start-ns (System/nanoTime)]
-                   (timbre/trace "InfluxDB3 write start" {:points (count points)})
-                   (doseq [point points]
-                     (.writePoint ^InfluxDBClient @client* point))
-                   (let [elapsed-ms (/ (- (System/nanoTime) start-ns) 1000000.0)]
-                     (timbre/trace
-                       "InfluxDB3 write done"
-                       {:points     (count points)
-                        :elapsed-ms elapsed-ms})))
-                 (catch Throwable t (timbre/warn t "InfluxDB3 write failed")))
-            (recur)))))))
+        (timbre/info "InfluxDB3 writer thread started (batching every" batch-interval-ms "ms)")
+        (loop [batch []]
+          (let [timeout-ch (async/timeout batch-interval-ms)
+                [val port] (async/alts!! [ch timeout-ch])]
+            (cond
+              ;; New points arrived from channel
+              (= port ch)
+              (if val
+                (recur (into batch val))
+                ;; Channel closed - flush remaining and exit
+                (when (seq batch)
+                  (try (write-batch! @client* batch)
+                       (catch Throwable t (timbre/error t "InfluxDB3 final flush failed")))))
+
+              ;; Timeout - flush batch if non-empty
+              (seq batch)
+              (do (try (write-batch! @client* batch)
+                       (catch Throwable t (timbre/error t "InfluxDB3 batch write failed")))
+                  (recur []))
+
+              ;; Timeout with empty batch - just continue
+              :else
+              (recur []))))))))
 
 (defn- measurement-name
   [measurement]
@@ -233,10 +259,17 @@
   [_radiale-map _bus _state*
    {:keys [::event]
     :as   _m}]
-  (when-let [ch @writer-chan*]
-    (when-let [resolved (event->points @config* event)]
-      (when-not (async/offer! ch resolved)
-        (timbre/warn "InfluxDB3 write queue full; dropping points" {:points (count resolved)})))))
+  (if-let [ch @writer-chan*]
+    (if-let [resolved (event->points @config* event)]
+      (do (timbre/trace "InfluxDB3 queuing points" {:points (count resolved)})
+          (when-not (async/offer! ch resolved)
+            (timbre/warn "InfluxDB3 write queue full; dropping points" {:points (count resolved)})))
+      (timbre/trace
+        "InfluxDB3 event->points returned nil"
+        {:domain (::state/domain event)
+         :ident  (::state/ident event)
+         :prop   (::state/prop event)}))
+    (timbre/warn "InfluxDB3 writer channel not initialized")))
 
 (defn subscribe
   [_radiale-map bus state*
@@ -253,15 +286,22 @@
                     (let [points      (event->points opts m)
                           raw-now     (::state/now m)
                           prop        (::state/prop m)
+                          domain      (::state/domain m)
                           measurement (get (normalize-prop-aliases (::prop-aliases opts)) prop prop)]
+                      (timbre/trace
+                        "InfluxDB3 watcher received event"
+                        {:domain     domain
+                         :ident      (::state/ident m)
+                         :prop       prop
+                         :has-points (some? points)})
                       (when (and
                               (map? raw-now)
                               (contains? raw-now :state)
                               (nil? points))
                         (timbre/trace
                           "InfluxDB3 filtered event"
-                          {:domain      (::state/domain m)
-                           :prop        (::state/prop m)
+                          {:domain      domain
+                           :prop        prop
                            :measurement measurement
                            :now         raw-now
                            :domains     (normalize-domains opts)
