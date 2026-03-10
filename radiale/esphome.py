@@ -35,8 +35,9 @@ class ESPHome():
                level=LOG_WARNING if not expected else LOG_INFO)
         await self.connected_state(False)
 
+        # For expected disconnects (e.g. OTA reboot), wait longer before reconnecting
         if expected:
-            return
+            await asyncio.sleep(30)
 
         while self.retries < 15:
 
