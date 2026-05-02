@@ -293,3 +293,182 @@
         (nil? (get-in @state* (watchdog/state-path ::a))))
       (is
         (= 300000 (get-in @state* (watchdog/state-path ::b)))))))
+
+
+;; ---- ticks (recurring display update) ----
+
+(def ^:private tick-key ::test-tick)
+
+(defn- mk-render
+  "Test render fn: records every (state* minutes) call and returns a single
+   marker command per call. Returns [render-fn calls-atom]."
+  [marker]
+  (let [calls (atom [])]
+    [(fn [_state* minutes]
+       (swap! calls conj minutes)
+       {::marker marker
+        ::min    minutes}) calls]))
+
+
+(defn- ticks-cfg
+  ([] (ticks-cfg {}))
+  ([overrides]
+   (merge
+     {::watchdog/key       wd-key
+      ::watchdog/ticks-key tick-key
+      ::watchdog/render    (fn [_ m]
+                             {::min m})}
+     overrides)))
+
+
+(deftest ticks-test
+  (testing "active deadline far ahead pushes render + reschedule, ::rc/then is back-reference"
+    (let [state*      (atom {})
+          send-chan   (async/chan 10)
+          [render xs] (mk-render :outdoor)
+          ;; deadline = now + 600s (10min)
+          now         (System/currentTimeMillis)
+          cfg         (ticks-cfg {::watchdog/render render})]
+      (swap! state* assoc-in (watchdog/state-path wd-key) (+ now 600000))
+      (watchdog/ticks nil send-chan state* cfg)
+      (let [msg1 (async/poll! send-chan)
+            msg2 (async/poll! send-chan)]
+        (is
+          (= 1 (count @xs))
+          "render called once")
+        (is
+          (= 10 (first @xs))
+          "minutes computed correctly")
+        (is
+          (= :outdoor (::marker msg1))
+          "render output pushed first")
+        (is
+          (= schedule/after
+             (::rc/fn msg2))
+          "schedule pushed second")
+        (is
+          (= 60 (::schedule/seconds msg2))
+          "default 60s tick interval")
+        (is
+          (= tick-key (::schedule/at-most-once msg2))
+          "at-most-once = ticks-key")
+        ;; Critical: ::rc/then must self-reference ticks with the same cfg so
+        ;; the chain re-enters ticks cleanly each tick.
+        (is
+          (= (assoc cfg ::rc/fn watchdog/ticks) (::rc/then msg2))
+          "::rc/then = (assoc cfg ::rc/fn ticks)")
+        (is
+          (nil? (async/poll! send-chan))
+          "no more messages"))
+      (async/close! send-chan)))
+
+  (testing "boundary 90s ahead → minutes = 2 (ceil 1.5)"
+    (let [state*      (atom {})
+          send-chan   (async/chan 10)
+          [render xs] (mk-render :x)
+          cfg         (ticks-cfg {::watchdog/render render})
+          now         (System/currentTimeMillis)]
+      (swap! state* assoc-in (watchdog/state-path wd-key) (+ now 90000))
+      (watchdog/ticks nil send-chan state* cfg)
+      (is
+        (= 2 (first @xs)))
+      (async/close! send-chan)))
+
+  (testing "boundary 60s ahead → minutes = 1"
+    (let [state*      (atom {})
+          send-chan   (async/chan 10)
+          [render xs] (mk-render :x)
+          cfg         (ticks-cfg {::watchdog/render render})
+          now         (System/currentTimeMillis)]
+      (swap! state* assoc-in (watchdog/state-path wd-key) (+ now 60000))
+      (watchdog/ticks nil send-chan state* cfg)
+      (is
+        (= 1 (first @xs)))
+      (async/close! send-chan)))
+
+  (testing "deadline = now (boundary) → render(nil), no schedule"
+    (let [state*      (atom {})
+          send-chan   (async/chan 10)
+          [render xs] (mk-render :x)
+          cfg         (ticks-cfg {::watchdog/render render})
+          now         (System/currentTimeMillis)]
+      (swap! state* assoc-in (watchdog/state-path wd-key) now)
+      (watchdog/ticks nil send-chan state* cfg)
+      (is
+        (= [nil] @xs)
+        "render called with nil minutes")
+      (let [msg1 (async/poll! send-chan)
+            msg2 (async/poll! send-chan)]
+        (is
+          (= :x (::marker msg1))
+          "render output pushed")
+        (is
+          (nil? msg2)
+          "no schedule pushed"))
+      (async/close! send-chan)))
+
+  (testing "deadline in past → render(nil), no schedule"
+    (let [state*      (atom {})
+          send-chan   (async/chan 10)
+          [render xs] (mk-render :x)
+          cfg         (ticks-cfg {::watchdog/render render})]
+      (swap! state* assoc-in (watchdog/state-path wd-key) 1)
+      (watchdog/ticks nil send-chan state* cfg)
+      (is
+        (= [nil] @xs))
+      (async/poll! send-chan) ; consume the render output
+      (is
+        (nil? (async/poll! send-chan))
+        "no schedule pushed")
+      (async/close! send-chan)))
+
+  (testing "deadline nil → render(nil), no schedule"
+    (let [state*      (atom {})
+          send-chan   (async/chan 10)
+          [render xs] (mk-render :x)
+          cfg         (ticks-cfg {::watchdog/render render})]
+      (watchdog/ticks nil send-chan state* cfg)
+      (is
+        (= [nil] @xs))
+      (async/poll! send-chan)
+      (is
+        (nil? (async/poll! send-chan))
+        "no schedule pushed")
+      (async/close! send-chan)))
+
+  (testing "render returning a sequence pushes each command"
+    (let [state*    (atom {})
+          send-chan (async/chan 10)
+          render    (fn [_ _]
+                      [{::n 1} {::n 2} {::n 3}])
+          cfg       (ticks-cfg {::watchdog/render render})
+          now       (System/currentTimeMillis)]
+      (swap! state* assoc-in (watchdog/state-path wd-key) (+ now 300000))
+      (watchdog/ticks nil send-chan state* cfg)
+      (is
+        (= 1 (::n (async/poll! send-chan))))
+      (is
+        (= 2 (::n (async/poll! send-chan))))
+      (is
+        (= 3 (::n (async/poll! send-chan))))
+      ;; Then the schedule
+      (is
+        (= schedule/after
+           (::rc/fn (async/poll! send-chan))))
+      (async/close! send-chan)))
+
+  (testing "custom ::tick-seconds honored in schedule"
+    (let [state*    (atom {})
+          send-chan (async/chan 10)
+          cfg       (ticks-cfg
+                      {::watchdog/tick-seconds 30
+                       ::watchdog/render       (fn [_ m]
+                                                 {::min m})})
+          now       (System/currentTimeMillis)]
+      (swap! state* assoc-in (watchdog/state-path wd-key) (+ now 600000))
+      (watchdog/ticks nil send-chan state* cfg)
+      (async/poll! send-chan) ; render output
+      (let [sched (async/poll! send-chan)]
+        (is
+          (= 30 (::schedule/seconds sched))))
+      (async/close! send-chan))))

@@ -89,3 +89,43 @@
   [_ send-chan state* config]
   (doseq [c (bump! state* config (System/currentTimeMillis))]
     (async/>!! send-chan c)))
+
+
+(defn- minutes-remaining
+  [deadline now-ms]
+  (when (and
+          deadline
+          (> deadline now-ms))
+    (max 1 (long (Math/ceil (/ (- deadline now-ms) 60000.0))))))
+
+
+(defn ticks
+  "rc-fn: reads the watchdog deadline, calls render with state* and the
+   minutes remaining (or nil when the deadline is past/missing), pushes
+   the resulting commands to send-chan, and reschedules itself for
+   tick-seconds (default 60) later. Stops when the deadline is gone.
+
+   Config keys:
+     ::key          watchdog key (read via state-path)
+     ::ticks-key    at-most-once key for the tick schedule (must differ
+                    from the watchdog's own off-job key)
+     ::tick-seconds interval between ticks, default 60
+     ::render       (fn [state* minutes-or-nil]) -> rc command (or seq)"
+  [_ send-chan state*
+   {:keys [::key ::ticks-key ::tick-seconds ::render]
+    :or   {tick-seconds 60}
+    :as   cfg}]
+  (let [now      (System/currentTimeMillis)
+        deadline (get-in @state* (state-path key))
+        minutes  (minutes-remaining deadline now)
+        cmds     (render state* minutes)]
+    (doseq [c (if (sequential? cmds) cmds [cmds])]
+      (async/>!! send-chan c))
+    (when minutes
+      (async/>!!
+        send-chan
+        {::rc/fn                 schedule/after
+         ::rc/desc               (str "watchdog " key " tick")
+         ::schedule/at-most-once ticks-key
+         ::schedule/seconds      tick-seconds
+         ::rc/then               (assoc cfg ::rc/fn ticks)}))))
