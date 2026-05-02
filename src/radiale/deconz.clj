@@ -2,6 +2,7 @@
   (:require
     [clojure.core.async :as async]
     [clojure.string]
+    [radiale.state :as state]
     [taoensso.timbre :as timbre]))
 
 (defn store-deconz-config
@@ -74,6 +75,28 @@
           (timbre/debug i s r)))))
 
   (async/>!! bus m))
+
+
+;; Watch-handler factory for deconz button-style sensors.
+;; 
+;; Resolves a state-diff bug: deconz sensor :state events frequently arrive
+;; with only :lastupdated changing (e.g. two presses of the same button in a
+;; row). `clojure.data/diff` then strips :buttonevent from the watch event's
+;; ::state/now, so handlers that read `(get now :buttonevent)` would miss the
+;; second press. Gating on :lastupdated and reading :buttonevent from @state*
+;; sees every press.
+(defn on-press
+  [sensor-ident press-code build-cmds]
+  (fn [state* {:keys [::state/domain ::state/ident ::state/prop ::state/now]}]
+    (when (and
+            (= domain :radiale.deconz)
+            (= ident sensor-ident)
+            (= prop :state)
+            (:lastupdated now))
+      (let [be (get-in @state* [:radiale.deconz sensor-ident :state :buttonevent])]
+        (when (= press-code be)
+          (build-cmds state*))))))
+
 
 ; (put-deconz {:type "lights" :id "8" :state {:on false}} log)
 ; (put-deconz {:type "lights" :id "8" :state {:on true :bri 0 :transitiontime 0}} log)

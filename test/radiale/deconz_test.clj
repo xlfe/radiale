@@ -3,6 +3,7 @@
     [clojure.core.async :as async :refer [<!! >!! alts!! chan close! poll! timeout]]
     [clojure.test :refer :all]
     [radiale.deconz :as deconz]
+    [radiale.state :as state]
     [taoensso.timbre :as timbre]))
 
 ;; Fixture to silence Timbre logging during tests
@@ -403,3 +404,109 @@
           (is
             (= message (poll! bus))))))
     (close! bus)))
+
+
+;; --- Unit tests for on-press ---
+(deftest on-press-test
+  (testing "fires when buttonevent matches via state lookup"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :state
+                   ::state/now    {:lastupdated "T1"
+                                   :buttonevent 1002}}]
+      (is
+        (= :fired (handler state* msg)))))
+
+  ;; Regression test for the user's log at 16:22:12: a second 1002 press leaves
+  ;; :buttonevent unchanged so clojure.data/diff strips it from ::now. The
+  ;; handler must read :buttonevent from @state* to still recognise the press.
+  (testing "CRITICAL regression — fires when :buttonevent absent from :now"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :state
+                   ::state/now    {:lastupdated "T2"}}]
+      (is
+        (= :fired (handler state* msg))
+        "must fire when buttonevent only present in @state*, not in :now diff")))
+
+  (testing "no-op when buttonevent doesn't match press-code"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 2002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :state
+                   ::state/now    {:lastupdated "T1"}}]
+      (is
+        (nil? (handler state* msg)))))
+
+  (testing "no-op when :lastupdated absent from :now"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :state
+                   ::state/now    {:other "thing"}}]
+      (is
+        (nil? (handler state* msg)))))
+
+  (testing "no-op for wrong domain"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.esp
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :state
+                   ::state/now    {:lastupdated "T1"}}]
+      (is
+        (nil? (handler state* msg)))))
+
+  (testing "no-op for wrong sensor ident"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/other-switch
+                   ::state/prop   :state
+                   ::state/now    {:lastupdated "T1"}}]
+      (is
+        (nil? (handler state* msg)))))
+
+  (testing "no-op for wrong prop"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :props
+                   ::state/now    {:lastupdated "T1"}}]
+      (is
+        (nil? (handler state* msg))))))
