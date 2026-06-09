@@ -156,6 +156,34 @@ Connect to an MQTT broker.
  :password "pass"}               ; Optional: authentication
 ```
 
+## InfluxDB3 Configuration
+
+Write state changes to InfluxDB3 using the Java client.
+
+```clojure
+{:fn radiale.influx/subscribe
+ ::influx/host "http://localhost:8181" ; Required
+ ::influx/token "INFLUX_TOKEN"         ; Required
+ ::influx/database "radiale"           ; Required
+ ;; Optional: domains to write (defaults to [:radiale.esp])
+ ::influx/domains [:radiale.esp :radiale.deconz]
+ ;; Optional: only write these properties (keywords from ::state/prop)
+ ::influx/allow-props [:temp :humidity]
+ ;; Optional: map ESPHome properties to alternate measurements
+ ::influx/prop-aliases {:powerbox-temp :temp}}
+```
+
+If `::influx/allow-props` is omitted, all scalar values with a `:state` field are written.
+Scalar ESPHome values always include a `prop` tag with the original property
+name; aliasing simply changes the measurement name.
+
+### Measurement Mapping
+
+- ESPHome (`:radiale.esp`): measurement = property name, field = `value`.
+- deCONZ (`:radiale.deconz`): measurement = `:radiale.deconz`, fields = each state key (`bri`, `on`, `ct`, ...).
+
+All tags/measurement names are written as strings. Tags include `device`, `domain`, and `prop` for scalar ESPHome values.
+
 ## Scheduling Configuration
 
 Time-based task execution.

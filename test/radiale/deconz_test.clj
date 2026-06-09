@@ -3,6 +3,7 @@
     [clojure.core.async :as async :refer [<!! >!! alts!! chan close! poll! timeout]]
     [clojure.test :refer :all]
     [radiale.deconz :as deconz]
+    [radiale.state :as state]
     [taoensso.timbre :as timbre]))
 
 ;; Fixture to silence Timbre logging during tests
@@ -42,11 +43,11 @@
               :uniqueid "uid-l1"
               :service  "lights" ; API type (plural) for Deconz REST API
               :id       "1"}
-             (get-in @state* [ident :props])))
+             (get-in @state* [:radiale.deconz ident :props])))
         (is
-          (= {:on false} (get-in @state* [ident :state])))
+          (= {:on false} (get-in @state* [:radiale.deconz ident :state])))
         (is
-          (= ident (get-in @state* ["uid-l1"])))))
+          (= ident (get-in @state* [:radiale.deconz :by-uniqueid "uid-l1"])))))
 
     (testing "Light 2 config"
       (let [ident (keyword "radiale.light" "Light 2")]
@@ -55,11 +56,11 @@
               :uniqueid "uid-l2"
               :service  "lights" ; API type (plural) for Deconz REST API
               :id       "2"}
-             (get-in @state* [ident :props])))
+             (get-in @state* [:radiale.deconz ident :props])))
         (is
-          (= {:on true} (get-in @state* [ident :state])))
+          (= {:on true} (get-in @state* [:radiale.deconz ident :state])))
         (is
-          (= ident (get-in @state* ["uid-l2"])))))
+          (= ident (get-in @state* [:radiale.deconz :by-uniqueid "uid-l2"])))))
 
     (testing "Sensor 10 config"
       (let [ident (keyword "radiale.sensor" "Sensor 1")]
@@ -68,20 +69,20 @@
               :uniqueid "uid-s10"
               :service  "sensors" ; API type (plural) for Deconz REST API
               :id       "10"}
-             (get-in @state* [ident :props])))
+             (get-in @state* [:radiale.deconz ident :props])))
         (is
-          (= {:open true} (get-in @state* [ident :state])))
+          (= {:open true} (get-in @state* [:radiale.deconz ident :state])))
         (is
-          (= ident (get-in @state* ["uid-s10"])))))))
+          (= ident (get-in @state* [:radiale.deconz :by-uniqueid "uid-s10"])))))))
 
 ;; --- Unit tests for state-change ---
 (deftest state-change-test
   (let [bus (chan 10)
         state* (atom
-                 {"uid-l1"              :radiale.light/Light1
-                  :radiale.light/Light1 {:props {:name     "Light1"
-                                                 :uniqueid "uid-l1"}
-                                         :state {:on false}}})
+                 {:radiale.deconz {:by-uniqueid          {"uid-l1" :radiale.light/Light1}
+                                   :radiale.light/Light1 {:props {:name     "Light1"
+                                                                  :uniqueid "uid-l1"}
+                                                          :state {:on false}}}})
         service-type-namespaces {:lights :radiale.light}
         original-message {:some "data"}]
 
@@ -96,7 +97,7 @@
         (is
           (= {:on  true
               :bri 200}
-             (get-in @state* [:radiale.light/Light1 :state])))
+             (get-in @state* [:radiale.deconz :radiale.light/Light1 :state])))
         (let [bus-msg (poll! bus)]
           (is
             (some? bus-msg))
@@ -118,7 +119,7 @@
           (= {:name      "Light1"
               :uniqueid  "uid-l1"
               :reachable true} ; Merged
-             (get-in @state* [:radiale.light/Light1 :props])))
+             (get-in @state* [:radiale.deconz :radiale.light/Light1 :props])))
         (is
           (nil? (poll! bus)))
         "No message should be sent for attr-only changes"))
@@ -215,8 +216,8 @@
 ;; --- Unit tests for get-config ---
 (deftest get-config-test
   (let [state* (atom
-                 {:my-light {:props {:id      "light-id-01"
-                                     :service "lights"}}})]
+                 {:radiale.deconz {:my-light {:props {:id      "light-id-01"
+                                                      :service "lights"}}}})]
     (is
       (= {:id   "light-id-01"
           :type "lights"}
@@ -244,7 +245,7 @@
 
       ;; Verify the light was stored
       (is
-        (some? (get @state* :light/bed1-left))
+        (some? (get-in @state* [:radiale.deconz :light/bed1-left]))
         "Light should be stored with namespace :light")
 
       ;; Step 2: Now try to PUT to this light (this happens when a schedule fires)
@@ -403,3 +404,109 @@
           (is
             (= message (poll! bus))))))
     (close! bus)))
+
+
+;; --- Unit tests for on-press ---
+(deftest on-press-test
+  (testing "fires when buttonevent matches via state lookup"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :state
+                   ::state/now    {:lastupdated "T1"
+                                   :buttonevent 1002}}]
+      (is
+        (= :fired (handler state* msg)))))
+
+  ;; Regression test for the user's log at 16:22:12: a second 1002 press leaves
+  ;; :buttonevent unchanged so clojure.data/diff strips it from ::now. The
+  ;; handler must read :buttonevent from @state* to still recognise the press.
+  (testing "CRITICAL regression — fires when :buttonevent absent from :now"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :state
+                   ::state/now    {:lastupdated "T2"}}]
+      (is
+        (= :fired (handler state* msg))
+        "must fire when buttonevent only present in @state*, not in :now diff")))
+
+  (testing "no-op when buttonevent doesn't match press-code"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 2002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :state
+                   ::state/now    {:lastupdated "T1"}}]
+      (is
+        (nil? (handler state* msg)))))
+
+  (testing "no-op when :lastupdated absent from :now"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :state
+                   ::state/now    {:other "thing"}}]
+      (is
+        (nil? (handler state* msg)))))
+
+  (testing "no-op for wrong domain"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.esp
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :state
+                   ::state/now    {:lastupdated "T1"}}]
+      (is
+        (nil? (handler state* msg)))))
+
+  (testing "no-op for wrong sensor ident"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/other-switch
+                   ::state/prop   :state
+                   ::state/now    {:lastupdated "T1"}}]
+      (is
+        (nil? (handler state* msg)))))
+
+  (testing "no-op for wrong prop"
+    (let [state*  (atom {:radiale.deconz {:sensor/test-switch {:state {:buttonevent 1002}}}})
+          handler (deconz/on-press
+                    :sensor/test-switch
+                    1002
+                    (fn [_]
+                      :fired))
+          msg     {::state/domain :radiale.deconz
+                   ::state/ident  :sensor/test-switch
+                   ::state/prop   :props
+                   ::state/now    {:lastupdated "T1"}}]
+      (is
+        (nil? (handler state* msg))))))

@@ -1,10 +1,11 @@
 {:paths   ["src" "test"]
- :deps    {babashka/babashka.pods    {:git/sha "ed5e1f3390b9dfca564f66b6e79c739c3cd82d78"
-                                      :git/url "https://github.com/babashka/pods.git"}
-           com.taoensso/timbre       {:mvn/version "5.2.1"}
-           org.clojure/clojure       {:mvn/version "1.11.1"}
-           org.clojure/core.async    {:mvn/version "1.5.648"}
-           org.clojure/tools.logging {:mvn/version "1.2.4"}}
+ :deps    {babashka/babashka.pods      {:git/sha "ed5e1f3390b9dfca564f66b6e79c739c3cd82d78"
+                                        :git/url "https://github.com/babashka/pods.git"}
+           com.influxdb/influxdb3-java {:mvn/version "1.7.0"}
+           com.taoensso/timbre         {:mvn/version "5.2.1"}
+           org.clojure/clojure         {:mvn/version "1.11.1"}
+           org.clojure/core.async      {:mvn/version "1.5.648"}
+           org.clojure/tools.logging   {:mvn/version "1.2.4"}}
  :aliases {:build {:deps       {io.github.seancorfield/build-clj {:git/sha "9bd8b8a"
                                                                   :git/tag "v0.8.0"}}
                    :ns-default build}

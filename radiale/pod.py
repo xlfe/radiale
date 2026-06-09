@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import sys
 import traceback
 
@@ -59,11 +60,9 @@ def _write_(d):
 
 
 def clean_data(path, key, value):
-    return (
-        value is not float("nan")
-        and value is not float("inf")
-        and value is not float("-inf")
-    )
+    if isinstance(value, float):
+        return not (math.isnan(value) or math.isinf(value))
+    return True
 
 
 class OutgoingQ:
@@ -220,17 +219,22 @@ class RadialePod(object):
                 assert mdns is not None
                 self.esp[sn] = svc = esphome.ESPHome(self.out, id, _mdns, sn)
 
-            # check if its in a connecting loop already
+            # Hold connecting across the whole connect so this path and
+            # on_disconnect are mutually exclusive (no double-connect race).
             async with svc.connecting_lock:
                 if svc.connecting:
                     return
-
-            # if not connected, connect otherwise
-            if svc.cli is None or svc.cli._connection is None:
-                await asyncio.create_task(svc.connect())
-                await asyncio.create_task(svc.update_services())
-                await svc.connected_state(True)
-                await asyncio.create_task(svc.subscribe())
+                svc.connecting = True
+            try:
+                # if not connected, connect otherwise
+                if svc.cli is None or svc.cli._connection is None:
+                    await svc.connect()
+                    await svc.update_services()
+                    await svc.connected_state(True)
+                    await svc.subscribe()
+            finally:
+                async with svc.connecting_lock:
+                    svc.connecting = False
 
         elif var.endswith("switch-esp*"):
             sn = opts["service-name"]

@@ -85,6 +85,13 @@
       (async/>!! send-chan when-true))))
 
 
+(defn cancel
+  [_ _ state* {:keys [::at-most-once]}]
+  (when-let [job (get-in @state* [:radiale.schedule :unique at-most-once])]
+    (sched/kill job)
+    (swap! state* assoc-in [:radiale.schedule :unique at-most-once] nil)))
+
+
 
 
 

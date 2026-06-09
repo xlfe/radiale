@@ -103,7 +103,13 @@
     (if-let [fn- (::fn m)]
 
       ; if there is a ::fn specified, call it now after removing it from the map
-      (fn- radiale-map send-chan state* (dissoc m ::fn))
+      (try (fn- radiale-map send-chan state* (dissoc m ::fn))
+           (catch Exception e
+             (timbre/error
+               e
+               "Error invoking ::fn handler"
+               {:fn       fn-
+                :msg-keys (keys m)})))
 
       ; if not, check for a ::then
       ; If so, merge the map and try again for a fn
@@ -120,7 +126,10 @@
             (try-fn send-chan state* (merge clean-m t)))
 
           :else
-          (timbre/error m))))))
+          (timbre/error
+            "Unexpected ::then type"
+            {:then then
+             :msg  m}))))))
 
 (defn update-or-add
   [state* ident state]
@@ -150,7 +159,12 @@
              ; (let [{:keys [::esp/state ::esp/ident]} msg])
              ; (when ident
              ; (update-or-add state* ident state)
-             (timbre/debug (prn-str msg))
+             (let [log-msg (prn-str msg)]
+               (if (and
+                     (map? msg)
+                     (contains? msg :radiale.influx/event))
+                 (timbre/trace log-msg)
+                 (timbre/debug log-msg)))
              ; (prn msg)
 
              (cond

@@ -264,3 +264,31 @@
             (is
               (not= ch send-chan))))))
     (async/close! send-chan)))
+
+
+;; --- Unit tests for cancel ---
+(deftest cancel-test
+  (let [kill-calls (atom [])]
+    (with-redefs [scheduler/kill (fn [job]
+                                   (swap! kill-calls conj job)
+                                   nil)]
+
+      (testing "no-op when no existing job"
+        (reset! kill-calls [])
+        (let [state* (atom {})]
+          (sched/cancel nil nil state* {::sched/at-most-once :nothing-here})
+          (is
+            (empty? @kill-calls))
+          (is
+            (nil? (get-in @state* [:radiale.schedule :unique :nothing-here])))))
+
+      (testing "kills existing job and clears state path"
+        (reset! kill-calls [])
+        (let [job-id "job-42"
+              state* (atom {})]
+          (swap! state* assoc-in [:radiale.schedule :unique :outdoor-off] {:id job-id})
+          (sched/cancel nil nil state* {::sched/at-most-once :outdoor-off})
+          (is
+            (= [{:id job-id}] @kill-calls))
+          (is
+            (nil? (get-in @state* [:radiale.schedule :unique :outdoor-off]))))))))

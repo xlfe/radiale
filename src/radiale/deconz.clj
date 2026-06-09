@@ -2,6 +2,7 @@
   (:require
     [clojure.core.async :as async]
     [clojure.string]
+    [radiale.state :as state]
     [taoensso.timbre :as timbre]))
 
 (defn store-deconz-config
@@ -17,13 +18,13 @@
           (timbre/debug "discovered service" ident)
           (timbre/debug props)
           (swap! state* assoc-in
-            [ident :props]
+            [:radiale.deconz ident :props]
             (merge
               (dissoc props :state)
               {:service api-type ; Store the API type (e.g., "lights") not the namespace
                :id      id}))
-          (swap! state* assoc-in [ident :state] state)
-          (swap! state* assoc-in [uid] ident))))))
+          (swap! state* assoc-in [:radiale.deconz ident :state] state)
+          (swap! state* assoc-in [:radiale.deconz :by-uniqueid uid] ident))))))
 
 (defn state-change
   [service-type-namespaces
@@ -33,14 +34,14 @@
              (some->> r
                       keyword
                       (get service-type-namespaces))]
-    (when-let [ident (get-in @state* [uniqueid])]
+    (when-let [ident (get-in @state* [:radiale.deconz :by-uniqueid uniqueid])]
       (if state
-        (do (swap! state* assoc-in [ident :state] state)
+        (do (swap! state* assoc-in [:radiale.deconz ident :state] state)
             (async/>!!
               bus
               {::ident ident
                ::state state}))
-        (swap! state* update-in [ident :props] merge attr)))))
+        (swap! state* update-in [:radiale.deconz ident :props] merge attr)))))
 
 
 (defn discover
@@ -58,7 +59,7 @@
 
 (defn get-config
   [state* ident]
-  (let [{:keys [:id :service]} (get-in @state* [ident :props])]
+  (let [{:keys [:id :service]} (get-in @state* [:radiale.deconz ident :props])]
     {:id   id
      :type service}))
 
@@ -75,9 +76,30 @@
 
   (async/>!! bus m))
 
+
+;; Watch-handler factory for deconz button-style sensors.
+;; 
+;; Resolves a state-diff bug: deconz sensor :state events frequently arrive
+;; with only :lastupdated changing (e.g. two presses of the same button in a
+;; row). `clojure.data/diff` then strips :buttonevent from the watch event's
+;; ::state/now, so handlers that read `(get now :buttonevent)` would miss the
+;; second press. Gating on :lastupdated and reading :buttonevent from @state*
+;; sees every press.
+(defn on-press
+  [sensor-ident press-code build-cmds]
+  (fn [state* {:keys [::state/domain ::state/ident ::state/prop ::state/now]}]
+    (when (and
+            (= domain :radiale.deconz)
+            (= ident sensor-ident)
+            (= prop :state)
+            (:lastupdated now))
+      (let [be (get-in @state* [:radiale.deconz sensor-ident :state :buttonevent])]
+        (when (= press-code be)
+          (build-cmds state*))))))
+
+
 ; (put-deconz {:type "lights" :id "8" :state {:on false}} log)
 ; (put-deconz {:type "lights" :id "8" :state {:on true :bri 0 :transitiontime 0}} log)
 ; (put-deconz {:type "lights" :id "8" :state {:bri 255 :transitiontime 600}} log)))
-
 
 

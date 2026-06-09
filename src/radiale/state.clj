@@ -32,11 +32,20 @@
           (doseq [[[domain device property :as path] nv] (unpack [] now 2)]
             ; (println domain device property)
             ; (println "\t\t" (get-in prev path) "->" nv)
-            (async/>!!
-              send-chan
-              {::domain domain
-               ::ident  device
-               ::prop   property
-               ::prev   (get-in prev path)
-               ::now    nv})))))))
+            (let [msg {::domain domain
+                       ::ident  device
+                       ::prop   property
+                       ::prev   (get-in prev path)
+                       ::now    nv}]
+              (if (async/offer! send-chan msg)
+                (timbre/trace
+                  "State change queued"
+                  {:domain domain
+                   :ident  device
+                   :prop   property})
+                (timbre/warn
+                  "State change channel full, dropping event"
+                  {:domain domain
+                   :ident  device
+                   :prop   property})))))))))
         ; (async/>!! send-chan {::old m}))))) 

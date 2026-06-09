@@ -40,6 +40,7 @@ def test_esphome_init(esphome_instance, mock_out_q, mock_mdns_service):
     assert esphome_instance.service_name == "MyESPHome"
     assert esphome_instance.cli is None
     assert esphome_instance.retries == 0
+    assert esphome_instance.connected is False
     assert esphome_instance.connecting is False
     assert isinstance(esphome_instance.connecting_lock, asyncio.Lock)
 
@@ -104,6 +105,7 @@ async def test_esphome_connect_failure_apiclient_timeout(esphome_instance, mock_
 async def test_esphome_on_disconnect_successful_reconnect(esphome_instance):
     esphome_instance.connected_state = AsyncMock()
     esphome_instance.connect = AsyncMock() # Succeeds on first call
+    esphome_instance.update_services = AsyncMock()
     esphome_instance.subscribe = AsyncMock()
     esphome_instance.retries = 0 # Ensure starting retries is 0
 
@@ -113,33 +115,43 @@ async def test_esphome_on_disconnect_successful_reconnect(esphome_instance):
         await esphome_instance.on_disconnect()
 
         esphome_instance.connected_state.assert_any_call(False) # Initial disconnect
-        mock_sleep.assert_awaited_once_with(5)
+        mock_sleep.assert_not_awaited()  # success on first try -> no backoff sleep
         mock_eprint.assert_any_call('ESP try 0 reconnect MyESPHome')
         esphome_instance.connect.assert_awaited_once()
+        esphome_instance.update_services.assert_awaited_once()  # services refreshed on reconnect
         esphome_instance.connected_state.assert_any_call(True) # After reconnect
         esphome_instance.subscribe.assert_awaited_once()
         assert esphome_instance.retries == 0
         assert esphome_instance.connecting is False
 
 @pytest.mark.asyncio
-async def test_esphome_on_disconnect_fails_all_retries(esphome_instance):
+async def test_esphome_on_disconnect_retries_unbounded_with_capped_backoff(esphome_instance):
+    # The reconnect loop must NEVER give up (the old code abandoned after 15 tries)
+    # and must cap the exponential backoff at 60s.
+    fails = 16
     esphome_instance.connected_state = AsyncMock()
-    esphome_instance.connect = AsyncMock(side_effect=APIConnectionError("Persistent connection failure"))
-    esphome_instance.subscribe = AsyncMock() # Should not be called
+    esphome_instance.connect = AsyncMock(
+        side_effect=[APIConnectionError("fail")] * fails + [None])
+    esphome_instance.update_services = AsyncMock()
+    esphome_instance.subscribe = AsyncMock()
     esphome_instance.retries = 0
 
     with patch('asyncio.sleep', AsyncMock()) as mock_sleep, \
-         patch('radiale.esphome.eprint') as mock_eprint: # Mock eprint from logging module
+         patch('radiale.esphome.eprint'):
 
         await esphome_instance.on_disconnect()
 
-        esphome_instance.connected_state.assert_called_with(False) # Only called for initial disconnect
-        assert mock_sleep.call_count == 15 # Sleeps 15 times
-        assert esphome_instance.connect.await_count == 15
-        esphome_instance.subscribe.assert_not_called()
-        assert esphome_instance.retries == 15
+        # tried past the old 15-retry ceiling, then reconnected
+        assert esphome_instance.connect.await_count == fails + 1
+        esphome_instance.subscribe.assert_awaited_once()
+        esphome_instance.connected_state.assert_any_call(True)
+        assert esphome_instance.retries == 0  # reset on success
+
+        backoffs = [c.args[0] for c in mock_sleep.await_args_list]
+        assert len(backoffs) == fails              # one sleep per failure
+        assert backoffs[:5] == [5, 10, 20, 40, 60] # exponential...
+        assert all(b == 60 for b in backoffs[4:])  # ...capped at 60
         assert esphome_instance.connecting is False
-        mock_eprint.assert_any_call('ESP try 14 reconnect MyESPHome') # Last retry log
 
 @pytest.mark.asyncio
 async def test_esphome_subscribe(esphome_instance, mock_out_q):
@@ -212,6 +224,7 @@ async def test_esphome_update_services(esphome_instance, mock_out_q):
 @pytest.mark.asyncio
 async def test_esphome_switch_command(esphome_instance, mock_out_q):
     esphome_instance.cli = MagicMock()  # switch_command is synchronous now
+    esphome_instance.connected = True   # _is_live() requires a live, connected client
     esphome_instance.cli.switch_command = MagicMock()
 
     await esphome_instance.switch_command(id="cmd_sw_1", key=123, state=True)
@@ -222,6 +235,7 @@ async def test_esphome_switch_command(esphome_instance, mock_out_q):
 @pytest.mark.asyncio
 async def test_esphome_light_command(esphome_instance, mock_out_q):
     esphome_instance.cli = MagicMock()  # light_command is synchronous now
+    esphome_instance.connected = True   # _is_live() requires a live, connected client
     esphome_instance.cli.light_command = MagicMock()
     params = {"state": True, "brightness": 128}
 
@@ -234,6 +248,7 @@ async def test_esphome_light_command(esphome_instance, mock_out_q):
 @pytest.mark.asyncio
 async def test_esphome_service_command(esphome_instance, mock_out_q):
     esphome_instance.cli = MagicMock()  # execute_service is synchronous now
+    esphome_instance.connected = True   # _is_live() requires a live, connected client
     esphome_instance.cli.execute_service = MagicMock()
 
     # Pre-populate service_details as update_services would
@@ -259,6 +274,7 @@ async def test_esphome_service_command(esphome_instance, mock_out_q):
 @pytest.mark.asyncio
 async def test_esphome_state_update(esphome_instance, mock_out_q):
     esphome_instance.cli = MagicMock()  # send_home_assistant_state is synchronous now
+    esphome_instance.connected = True   # _is_live() requires a live, connected client
     esphome_instance.cli.send_home_assistant_state = MagicMock()
 
     entity_id = "sensor.temp"
@@ -269,3 +285,94 @@ async def test_esphome_state_update(esphome_instance, mock_out_q):
 
     esphome_instance.cli.send_home_assistant_state.assert_called_once_with(entity_id, attribute, state_val)
     mock_out_q.write_msg.assert_called_once_with(id="cmd_st_1", data={"success": True})
+
+
+# --- Tests for the reconnect-wedge fix (null cli on disconnect, hard connect
+#     timeout, _is_live gating) ---
+
+@pytest.mark.asyncio
+async def test_esphome_close_cli_disconnects_and_nulls(esphome_instance):
+    old_cli = AsyncMock()
+    esphome_instance.cli = old_cli
+    esphome_instance.connected = True
+
+    await esphome_instance._close_cli()
+
+    old_cli.disconnect.assert_awaited_once_with(force=True)
+    assert esphome_instance.cli is None
+    assert esphome_instance.connected is False
+
+
+def test_esphome_is_live_gating(esphome_instance):
+    # nothing connected
+    assert esphome_instance._is_live() is False
+    # connected flag set but no client
+    esphome_instance.connected = True
+    esphome_instance.cli = None
+    assert esphome_instance._is_live() is False
+    # client present but half-open (no _connection) -> the stale-client case
+    esphome_instance.cli = MagicMock()
+    esphome_instance.cli._connection = None
+    assert esphome_instance._is_live() is False
+    # fully live
+    esphome_instance.cli._connection = MagicMock()
+    assert esphome_instance._is_live() is True
+    # live connection but our flag cleared (the in-connect() window)
+    esphome_instance.connected = False
+    assert esphome_instance._is_live() is False
+
+
+@pytest.mark.asyncio
+async def test_esphome_connect_timeout_drops_client(esphome_instance, mock_mdns_service):
+    mock_service_info = MagicMock()
+    mock_service_info.parsed_scoped_addresses.return_value = ["10.0.0.1"]
+    mock_service_info.port = 6053
+    mock_mdns_service.get_info = AsyncMock(return_value=mock_service_info)
+
+    mock_apiclient_instance = AsyncMock()
+    mock_apiclient_instance.connect = AsyncMock(side_effect=asyncio.TimeoutError)
+
+    with patch('radiale.esphome.aioesphomeapi.APIClient', return_value=mock_apiclient_instance):
+        with pytest.raises(APIConnectionError):
+            await esphome_instance.connect()
+
+    # a connect that times out must tear the half-open client down, not leave it
+    # behind for service_command to fire into.
+    mock_apiclient_instance.disconnect.assert_awaited_with(force=True)
+    assert esphome_instance.cli is None
+    assert esphome_instance.connected is False
+
+
+@pytest.mark.asyncio
+async def test_esphome_service_command_not_connected(esphome_instance, mock_out_q):
+    # cli object present but not live (e.g. mid-reconnect) -> must NOT fire and must
+    # report failure rather than the old false success:true.
+    esphome_instance.cli = MagicMock()
+    esphome_instance.connected = False
+    esphome_instance.service_details = {
+        "789": {"key": 789, "name": "svc", "type": "user-defined-service"}}
+
+    await esphome_instance.service_command(id="c1", key=789, params={})
+
+    esphome_instance.cli.execute_service.assert_not_called()
+    mock_out_q.write_msg.assert_called_once_with(
+        id="c1", data={"success": False, "error": "Not connected"})
+
+
+@pytest.mark.asyncio
+async def test_esphome_service_command_awaits_async_execute_service(esphome_instance, mock_out_q):
+    # aioesphomeapi 45.x makes execute_service a coroutine; it MUST be awaited or
+    # the command is silently dropped (the success:true-but-nothing-sent bug).
+    esphome_instance.cli = MagicMock()
+    esphome_instance.connected = True
+    esphome_instance.cli.execute_service = AsyncMock()  # async, as in 45.x
+    esphome_instance.service_details = {
+        "789": {"key": 789, "name": "svc", "type": "user-defined-service"}}
+
+    with patch('radiale.esphome.UserService') as MockUserServiceCls:
+        svc_obj = MagicMock()
+        MockUserServiceCls.return_value = svc_obj
+        await esphome_instance.service_command(id="c1", key=789, params={"a": 1})
+
+    esphome_instance.cli.execute_service.assert_awaited_once_with(svc_obj, {"a": 1})
+    mock_out_q.write_msg.assert_called_once_with(id="c1", data={"success": True})
