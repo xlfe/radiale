@@ -357,3 +357,22 @@ async def test_esphome_service_command_not_connected(esphome_instance, mock_out_
     esphome_instance.cli.execute_service.assert_not_called()
     mock_out_q.write_msg.assert_called_once_with(
         id="c1", data={"success": False, "error": "Not connected"})
+
+
+@pytest.mark.asyncio
+async def test_esphome_service_command_awaits_async_execute_service(esphome_instance, mock_out_q):
+    # aioesphomeapi 45.x makes execute_service a coroutine; it MUST be awaited or
+    # the command is silently dropped (the success:true-but-nothing-sent bug).
+    esphome_instance.cli = MagicMock()
+    esphome_instance.connected = True
+    esphome_instance.cli.execute_service = AsyncMock()  # async, as in 45.x
+    esphome_instance.service_details = {
+        "789": {"key": 789, "name": "svc", "type": "user-defined-service"}}
+
+    with patch('radiale.esphome.UserService') as MockUserServiceCls:
+        svc_obj = MagicMock()
+        MockUserServiceCls.return_value = svc_obj
+        await esphome_instance.service_command(id="c1", key=789, params={"a": 1})
+
+    esphome_instance.cli.execute_service.assert_awaited_once_with(svc_obj, {"a": 1})
+    mock_out_q.write_msg.assert_called_once_with(id="c1", data={"success": True})

@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import aioesphomeapi
 from aioesphomeapi.core import APIConnectionError
 from aioesphomeapi.model import UserService
@@ -169,20 +170,27 @@ class ESPHome():
                     }
                 )
 
+    async def _maybe_await(self, result):
+        # aioesphomeapi flips these fire-and-forget commands between sync and
+        # async across versions (e.g. execute_service is sync in 42.x but a
+        # coroutine in 45.x). Await the result iff it's awaitable, so the command
+        # is actually sent regardless of the installed version — calling an async
+        # method without await silently drops it (success:true, nothing sent).
+        if inspect.isawaitable(result):
+            await result
+
     async def switch_command(self, id, key, state):
         if not self._is_live():
             self.out.write_msg(id=id, data={"success": False, "error": "Not connected"})
             return
-        # switch_command is synchronous in newer aioesphomeapi
-        self.cli.switch_command(key, state)
+        await self._maybe_await(self.cli.switch_command(key, state))
         self.out.write_msg(id=id, data={"success": True})
 
     async def light_command(self, id, key, params):
         if not self._is_live():
             self.out.write_msg(id=id, data={"success": False, "error": "Not connected"})
             return
-        # light_command is synchronous in newer aioesphomeapi
-        self.cli.light_command(key, **params)
+        await self._maybe_await(self.cli.light_command(key, **params))
         self.out.write_msg(id=id, data={"success": True})
 
     async def service_command(self, id, key, params):
@@ -192,17 +200,16 @@ class ESPHome():
         svc = self.service_details[str(key)].copy()
         svc.pop('type')
         service = UserService(**svc)
-        # execute_service is one-way (no device ACK): success:true means only that we
-        # held a live connection when sending, NOT that the device acted.
-        self.cli.execute_service(service, params)
+        # execute_service is one-way (no device ACK): success:true means only that
+        # we sent it on a live connection, NOT that the device acted.
+        await self._maybe_await(self.cli.execute_service(service, params))
         self.out.write_msg(id=id, data={"success": True})
 
     async def state_update(self, id, entity_id, attribute, state):
         if not self._is_live():
             self.out.write_msg(id=id, data={"success": False, "error": "Not connected"})
             return
-        # send_home_assistant_state is synchronous in newer aioesphomeapi
-        self.cli.send_home_assistant_state(entity_id, attribute, state)
+        await self._maybe_await(self.cli.send_home_assistant_state(entity_id, attribute, state))
         self.out.write_msg(id=id, data={"success": True})
 
 
